@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -165,6 +165,8 @@ jobs:
           grep -rn "cardTheme" lib/app.dart
           echo "=== Checking requestSmsPermissions ==="
           grep -n "requestSms" lib/services/sms_service.dart
+          echo "=== Checking contact_picker removed ==="
+          grep -rn "contact_picker" lib/ pubspec.yaml || echo "None found - good!"
 
       - name: Clean and get dependencies
         run: |
