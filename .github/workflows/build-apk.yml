@@ -135,20 +135,16 @@ jobs:
 
       - name: Fix all Gradle compatibility issues
         run: |
-          # 1. Set compileSdk to 36 in app/build.gradle (only if file exists)
+          # Fix compileSdk in app build file
           if [ -f "android/app/build.gradle" ]; then
             sed -i 's/compileSdk 34/compileSdk 36/g' android/app/build.gradle
             sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' android/app/build.gradle
-            echo "=== app/build.gradle compileSdk line ==="
-            grep -n "compileSdk" android/app/build.gradle
           elif [ -f "android/app/build.gradle.kts" ]; then
             sed -i 's/compileSdk = 34/compileSdk = 36/g' android/app/build.gradle.kts
             sed -i 's/compileSdkVersion = 34/compileSdkVersion = 36/g' android/app/build.gradle.kts
-            echo "=== app/build.gradle.kts compileSdk line ==="
-            grep -n "compileSdk" android/app/build.gradle.kts
           fi
           
-          # 2. Add namespace + JVM target + compileSdk fixes to all subprojects
+          # Add namespace + JVM target + compileSdk fixes for all subprojects
           cat >> android/build.gradle << 'GRADLEFIX'
 
           subprojects {
@@ -182,9 +178,6 @@ jobs:
               }
           }
           GRADLEFIX
-          
-          echo "=== android/build.gradle (last 30 lines) ==="
-          tail -30 android/build.gradle
 
       - name: Verify project structure
         run: find lib/ -type f | sort
@@ -193,11 +186,32 @@ jobs:
         run: flutter pub get
 
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --no-tree-shake-icons
+
+      - name: Find APK file
+        id: findapk
+        run: |
+          echo "=== Searching for APK files ==="
+          find . -name "*.apk" -not -path "./.git/*" 2>/dev/null
+          find / -name "*.apk" 2>/dev/null | head -20
+          
+          APK_FILE=$(find . -name "*.apk" -not -path "./.git/*" | head -1)
+          echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: daily-collection-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-          
+          path: |
+            build/app/outputs/flutter-apk/*.apk
+            **/*.apk
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build/
+            android/app/build/
+            
