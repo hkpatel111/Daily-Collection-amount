@@ -61,31 +61,8 @@ jobs:
             cp -r "$PROJECT_ROOT"/. .
           fi
 
-      - name: Create missing folders
-        run: mkdir -p lib/models lib/database/dao lib/services lib/screens lib/widgets lib/utils test android/app/src/main
-
-      - name: Move files to correct folders if needed
-        run: |
-          for f in customer.dart loan.dart schedule_entry.dart collection_entry.dart settings.dart transaction_log.dart; do
-            if [ -f "$f" ] && [ ! -f "lib/models/$f" ]; then mv "$f" lib/models/; fi
-          done
-          for f in customer_dao.dart loan_dao.dart schedule_dao.dart collection_dao.dart settings_dao.dart transaction_log_dao.dart; do
-            if [ -f "$f" ] && [ ! -f "lib/database/dao/$f" ]; then mv "$f" lib/database/dao/; fi
-          done
-          if [ -f "database_helper.dart" ] && [ ! -f "lib/database/database_helper.dart" ]; then mv database_helper.dart lib/database/; fi
-          for f in calculation_service.dart schedule_service.dart sms_service.dart backup_service.dart notification_service.dart; do
-            if [ -f "$f" ] && [ ! -f "lib/services/$f" ]; then mv "$f" lib/services/; fi
-          done
-          for f in dashboard_screen.dart customer_list_screen.dart add_customer_screen.dart customer_detail_screen.dart loan_detail_screen.dart daily_collection_screen.dart collection_list_screen.dart pre_close_screen.dart settings_screen.dart calendar_screen.dart transaction_log_screen.dart loan_list_screen.dart search_screen.dart; do
-            if [ -f "$f" ] && [ ! -f "lib/screens/$f" ]; then mv "$f" lib/screens/; fi
-          done
-          for f in stat_card.dart schedule_entry_tile.dart; do
-            if [ -f "$f" ] && [ ! -f "lib/widgets/$f" ]; then mv "$f" lib/widgets/; fi
-          done
-          for f in constants.dart validators.dart; do
-            if [ -f "$f" ] && [ ! -f "lib/utils/$f" ]; then mv "$f" lib/utils/; fi
-          done
-          if [ -f "AndroidManifest.xml" ] && [ ! -f "android/app/src/main/AndroidManifest.xml" ]; then mv AndroidManifest.xml android/app/src/main/; fi
+      - name: Create missing directories
+        run: mkdir -p lib/models lib/database/dao lib/services lib/screens lib/widgets lib/utils android/app/src/main
 
       - name: Generate Flutter scaffolding
         run: flutter create --org com.dailyhisab --project-name daily_collection_app .
@@ -97,6 +74,8 @@ jobs:
               <uses-permission android:name="android.permission.SEND_SMS" />
               <uses-permission android:name="android.permission.READ_SMS" />
               <uses-permission android:name="android.permission.RECEIVE_SMS" />
+              <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+              <uses-permission android:name="android.permission.READ_CONTACTS" />
               <application
                   android:label="Daily Collection"
                   android:name="${applicationName}"
@@ -180,10 +159,12 @@ jobs:
         run: |
           echo "=== lib/ structure ==="
           find lib/ -type f | sort
-          echo "=== sms_service permission ==="
+          echo "=== Checking for duplicate imports ==="
+          grep -rn "import 'calculators_screen.dart'" lib/screens/dashboard_screen.dart | wc -l
+          echo "=== Checking CardThemeData ==="
+          grep -rn "cardTheme" lib/app.dart
+          echo "=== Checking requestSmsPermissions ==="
           grep -n "requestSms" lib/services/sms_service.dart
-          echo "=== app.dart cardTheme ==="
-          grep -n "cardTheme" lib/app.dart
 
       - name: Clean and get dependencies
         run: |
