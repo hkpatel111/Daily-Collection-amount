@@ -135,9 +135,18 @@ jobs:
 
       - name: Fix all Gradle compatibility issues
         run: |
-          # 1. Set compileSdk to 36 in app/build.gradle
-          sed -i 's/compileSdk 34/compileSdk 36/g' android/app/build.gradle
-          sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' android/app/build.gradle
+          # 1. Set compileSdk to 36 in app/build.gradle (only if file exists)
+          if [ -f "android/app/build.gradle" ]; then
+            sed -i 's/compileSdk 34/compileSdk 36/g' android/app/build.gradle
+            sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' android/app/build.gradle
+            echo "=== app/build.gradle compileSdk line ==="
+            grep -n "compileSdk" android/app/build.gradle
+          elif [ -f "android/app/build.gradle.kts" ]; then
+            sed -i 's/compileSdk = 34/compileSdk = 36/g' android/app/build.gradle.kts
+            sed -i 's/compileSdkVersion = 34/compileSdkVersion = 36/g' android/app/build.gradle.kts
+            echo "=== app/build.gradle.kts compileSdk line ==="
+            grep -n "compileSdk" android/app/build.gradle.kts
+          fi
           
           # 2. Add namespace + JVM target + compileSdk fixes to all subprojects
           cat >> android/build.gradle << 'GRADLEFIX'
@@ -174,9 +183,6 @@ jobs:
           }
           GRADLEFIX
           
-          echo "=== android/app/build.gradle ==="
-          cat android/app/build.gradle
-          echo ""
           echo "=== android/build.gradle (last 30 lines) ==="
           tail -30 android/build.gradle
 
