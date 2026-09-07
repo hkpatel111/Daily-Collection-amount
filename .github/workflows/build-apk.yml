@@ -30,7 +30,6 @@ jobs:
           echo "Files in repo:"
           ls -la
           
-          # Find any zip file
           ZIP_FILE=$(find . -name "*.zip" -not -path "./.git/*" | head -1)
           
           if [ -z "$ZIP_FILE" ]; then
@@ -39,8 +38,6 @@ jobs:
           fi
           
           echo "Found ZIP: $ZIP_FILE"
-          
-          # Extract ZIP
           unzip -o "$ZIP_FILE" -d extracted/
           
           echo "Extracted contents:"
@@ -55,7 +52,7 @@ jobs:
             if [ -f "extracted/pubspec.yaml" ]; then
               PROJECT_ROOT="extracted"
             else
-              echo "ERROR: Cannot find pubspec.yaml in extracted ZIP!"
+              echo "ERROR: Cannot find pubspec.yaml!"
               find extracted/ -type f
               exit 1
             fi
@@ -67,11 +64,9 @@ jobs:
       - name: Copy files to workspace
         run: |
           PROJECT_ROOT="${{ steps.findroot.outputs.project_root }}"
-          
           cp -r "$PROJECT_ROOT"/* . 2>/dev/null || true
           cp -r "$PROJECT_ROOT"/.github . 2>/dev/null || true
           cp -r "$PROJECT_ROOT"/.gitignore . 2>/dev/null || true
-          
           if [ ! -f "pubspec.yaml" ] && [ -d "$PROJECT_ROOT" ]; then
             cp -r "$PROJECT_ROOT"/. .
           fi
@@ -150,9 +145,8 @@ jobs:
 
       - name: Fix telephony namespace issue
         run: |
-          # Add namespace fix to android/build.gradle
           cat >> android/build.gradle << 'GRADLEFIX'
-          
+
           subprojects {
               afterEvaluate { project ->
                   if (project.plugins.hasPlugin("com.android.library")) {
@@ -168,9 +162,33 @@ jobs:
               }
           }
           GRADLEFIX
+
+      - name: Apply code fixes
+        run: |
+          # Fix 1: CardTheme -> CardThemeData in app.dart
+          sed -i 's/cardTheme: CardTheme(/cardTheme: CardThemeData(/g' lib/app.dart
+          echo "=== Fix 1 applied: CardThemeData ==="
           
-          echo "=== android/build.gradle ==="
-          cat android/build.gradle
+          # Fix 2: Remove keyboardType from InputDecoration in add_customer_screen.dart
+          sed -i '/prefixText: .+91 /,/)/{ /keyboardType: TextInputType.phone,/d }' lib/screens/add_customer_screen.dart
+          echo "=== Fix 2 applied: keyboardType removed from InputDecoration ==="
+          
+          # Fix 3: Fix requestSmsPermissions in sms_service.dart
+          sed -i 's/final status = await _telephony.requestSmsPermissions(/final status = await _telephony.requestSmsPermission; \/\//g' lib/services/sms_service.dart
+          # Also remove the sendSms: true, and closing paren lines if they remain
+          sed -i '/\/\/ sendSms: true,/d' lib/services/sms_service.dart
+          sed -i '/sendSms: true,/d' lib/services/sms_service.dart
+          # Clean up any leftover closing paren from old multi-line call
+          sed -i '/^              );$/{ N; /^\s*);$/d }' lib/services/sms_service.dart
+          echo "=== Fix 3 applied: requestSmsPermission ==="
+          
+          # Verify fixes
+          echo "=== app.dart cardTheme line ==="
+          grep -n "cardTheme" lib/app.dart
+          echo "=== sms_service.dart permission line ==="
+          grep -n "requestSms" lib/services/sms_service.dart
+          echo "=== add_customer keyboardType in InputDecoration ==="
+          grep -n "keyboardType" lib/screens/add_customer_screen.dart
 
       - name: Get dependencies
         run: flutter pub get
