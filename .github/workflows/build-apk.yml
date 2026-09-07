@@ -27,27 +27,20 @@ jobs:
 
       - name: Find and extract ZIP
         run: |
-          echo "Files in repo:"
           ls -la
-          
           ZIP_FILE=$(find . -name "*.zip" -not -path "./.git/*" | head -1)
-          
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: No ZIP file found!"
             exit 1
           fi
-          
           echo "Found ZIP: $ZIP_FILE"
           unzip -o "$ZIP_FILE" -d extracted/
-          
-          echo "Extracted contents:"
           find extracted/ -type f | head -60
 
-      - name: Find project root folder
+      - name: Find project root
         id: findroot
         run: |
           PROJECT_ROOT=$(find extracted/ -name "pubspec.yaml" -not -path "*/.git/*" | head -1 | xargs dirname)
-          
           if [ -z "$PROJECT_ROOT" ]; then
             if [ -f "extracted/pubspec.yaml" ]; then
               PROJECT_ROOT="extracted"
@@ -57,8 +50,6 @@ jobs:
               exit 1
             fi
           fi
-          
-          echo "Project root: $PROJECT_ROOT"
           echo "project_root=$PROJECT_ROOT" >> $GITHUB_OUTPUT
 
       - name: Copy files to workspace
@@ -72,8 +63,7 @@ jobs:
           fi
 
       - name: Create missing folders
-        run: |
-          mkdir -p lib/models lib/database/dao lib/services lib/screens lib/widgets lib/utils test android/app/src/main
+        run: mkdir -p lib/models lib/database/dao lib/services lib/screens lib/widgets lib/utils test android/app/src/main
 
       - name: Move files to correct folders if needed
         run: |
@@ -163,32 +153,14 @@ jobs:
           }
           GRADLEFIX
 
-      - name: Apply code fixes
+      - name: Verify project structure
         run: |
-          # Fix 1: CardTheme -> CardThemeData in app.dart
-          sed -i 's/cardTheme: CardTheme(/cardTheme: CardThemeData(/g' lib/app.dart
-          echo "=== Fix 1 applied: CardThemeData ==="
-          
-          # Fix 2: Remove keyboardType from InputDecoration in add_customer_screen.dart
-          sed -i '/prefixText: .+91 /,/)/{ /keyboardType: TextInputType.phone,/d }' lib/screens/add_customer_screen.dart
-          echo "=== Fix 2 applied: keyboardType removed from InputDecoration ==="
-          
-          # Fix 3: Fix requestSmsPermissions in sms_service.dart
-          sed -i 's/final status = await _telephony.requestSmsPermissions(/final status = await _telephony.requestSmsPermission; \/\//g' lib/services/sms_service.dart
-          # Also remove the sendSms: true, and closing paren lines if they remain
-          sed -i '/\/\/ sendSms: true,/d' lib/services/sms_service.dart
-          sed -i '/sendSms: true,/d' lib/services/sms_service.dart
-          # Clean up any leftover closing paren from old multi-line call
-          sed -i '/^              );$/{ N; /^\s*);$/d }' lib/services/sms_service.dart
-          echo "=== Fix 3 applied: requestSmsPermission ==="
-          
-          # Verify fixes
-          echo "=== app.dart cardTheme line ==="
-          grep -n "cardTheme" lib/app.dart
-          echo "=== sms_service.dart permission line ==="
+          echo "=== lib/ structure ==="
+          find lib/ -type f | sort
+          echo "=== sms_service permission ==="
           grep -n "requestSms" lib/services/sms_service.dart
-          echo "=== add_customer keyboardType in InputDecoration ==="
-          grep -n "keyboardType" lib/screens/add_customer_screen.dart
+          echo "=== app.dart cardTheme ==="
+          grep -n "cardTheme" lib/app.dart
 
       - name: Get dependencies
         run: flutter pub get
