@@ -66,17 +66,17 @@ jobs:
 
       - name: Move files to correct folders if needed
         run: |
-          for f in customer.dart loan.dart schedule_entry.dart collection_entry.dart settings.dart; do
+          for f in customer.dart loan.dart schedule_entry.dart collection_entry.dart settings.dart transaction_log.dart; do
             if [ -f "$f" ] && [ ! -f "lib/models/$f" ]; then mv "$f" lib/models/; fi
           done
-          for f in customer_dao.dart loan_dao.dart schedule_dao.dart collection_dao.dart settings_dao.dart; do
+          for f in customer_dao.dart loan_dao.dart schedule_dao.dart collection_dao.dart settings_dao.dart transaction_log_dao.dart; do
             if [ -f "$f" ] && [ ! -f "lib/database/dao/$f" ]; then mv "$f" lib/database/dao/; fi
           done
           if [ -f "database_helper.dart" ] && [ ! -f "lib/database/database_helper.dart" ]; then mv database_helper.dart lib/database/; fi
-          for f in calculation_service.dart schedule_service.dart sms_service.dart backup_service.dart; do
+          for f in calculation_service.dart schedule_service.dart sms_service.dart backup_service.dart notification_service.dart; do
             if [ -f "$f" ] && [ ! -f "lib/services/$f" ]; then mv "$f" lib/services/; fi
           done
-          for f in dashboard_screen.dart customer_list_screen.dart add_customer_screen.dart customer_detail_screen.dart loan_detail_screen.dart daily_collection_screen.dart pre_close_screen.dart settings_screen.dart; do
+          for f in dashboard_screen.dart customer_list_screen.dart add_customer_screen.dart customer_detail_screen.dart loan_detail_screen.dart daily_collection_screen.dart collection_list_screen.dart pre_close_screen.dart settings_screen.dart calendar_screen.dart transaction_log_screen.dart loan_list_screen.dart search_screen.dart; do
             if [ -f "$f" ] && [ ! -f "lib/screens/$f" ]; then mv "$f" lib/screens/; fi
           done
           for f in stat_card.dart schedule_entry_tile.dart; do
@@ -85,8 +85,6 @@ jobs:
           for f in constants.dart validators.dart; do
             if [ -f "$f" ] && [ ! -f "lib/utils/$f" ]; then mv "$f" lib/utils/; fi
           done
-          if [ -f "calculation_service_test.dart" ] && [ ! -f "test/calculation_service_test.dart" ]; then mv calculation_service_test.dart test/; fi
-          if [ -f "build_apk.yml" ]; then mkdir -p .github/workflows; mv build_apk.yml .github/workflows/; fi
           if [ -f "AndroidManifest.xml" ] && [ ! -f "android/app/src/main/AndroidManifest.xml" ]; then mv AndroidManifest.xml android/app/src/main/; fi
 
       - name: Generate Flutter scaffolding
@@ -134,7 +132,7 @@ jobs:
 
       - name: Fix all Gradle compatibility issues
         run: |
-          # Fix compileSdk in app build file (check both .gradle and .kts)
+          # Fix compileSdk in app build file
           if [ -f "android/app/build.gradle" ]; then
             sed -i 's/compileSdk 34/compileSdk 36/g' android/app/build.gradle
             sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' android/app/build.gradle
@@ -142,7 +140,8 @@ jobs:
             sed -i 's/compileSdk = 34/compileSdk = 36/g' android/app/build.gradle.kts
             sed -i 's/compileSdkVersion = 34/compileSdkVersion = 36/g' android/app/build.gradle.kts
           fi
-          
+
+          # Add namespace + JVM target + compileSdk fixes for all subprojects
           cat >> android/build.gradle << 'GRADLEFIX'
 
           subprojects {
@@ -178,30 +177,33 @@ jobs:
           GRADLEFIX
 
       - name: Verify project structure
-        run: find lib/ -type f | sort
+        run: |
+          echo "=== lib/ structure ==="
+          find lib/ -type f | sort
+          echo "=== sms_service permission ==="
+          grep -n "requestSms" lib/services/sms_service.dart
+          echo "=== app.dart cardTheme ==="
+          grep -n "cardTheme" lib/app.dart
 
       - name: Clean and get dependencies
         run: |
           flutter clean
           flutter pub get
 
-      - name: Build APK (verbose, capture all output)
-        run: |
-          flutter build apk --release -v 2>&1 | tee /tmp/build_output.txt
+      - name: Build APK (verbose, capture output)
+        run: flutter build apk --release -v 2>&1 | tee /tmp/build_output.txt
         continue-on-error: true
 
       - name: Search for APK everywhere
         id: findapk
         run: |
-          echo "=== Searching for APK in entire filesystem ==="
+          echo "=== Searching for APK ==="
           find / -name "*.apk" 2>/dev/null | grep -v "platforms" | head -20
-          
           APK_FILE=$(find / -name "*.apk" 2>/dev/null | grep -v "platforms" | head -1)
           echo "Found APK: $APK_FILE"
           echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
-          
-          echo "=== Last 50 lines of build output ==="
-          tail -50 /tmp/build_output.txt
+          echo "=== Last 30 lines of build output ==="
+          tail -30 /tmp/build_output.txt
 
       - name: Upload APK (if found)
         if: steps.findapk.outputs.apk_path != ''
