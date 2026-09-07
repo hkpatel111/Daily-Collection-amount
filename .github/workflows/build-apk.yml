@@ -35,7 +35,6 @@ jobs:
           fi
           echo "Found ZIP: $ZIP_FILE"
           unzip -o "$ZIP_FILE" -d extracted/
-          find extracted/ -type f | head -60
 
       - name: Find project root
         id: findroot
@@ -135,7 +134,7 @@ jobs:
 
       - name: Fix all Gradle compatibility issues
         run: |
-          # Fix compileSdk in app build file
+          # Fix compileSdk in app build file (check both .gradle and .kts)
           if [ -f "android/app/build.gradle" ]; then
             sed -i 's/compileSdk 34/compileSdk 36/g' android/app/build.gradle
             sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' android/app/build.gradle
@@ -144,7 +143,6 @@ jobs:
             sed -i 's/compileSdkVersion = 34/compileSdkVersion = 36/g' android/app/build.gradle.kts
           fi
           
-          # Add namespace + JVM target + compileSdk fixes for all subprojects
           cat >> android/build.gradle << 'GRADLEFIX'
 
           subprojects {
@@ -182,36 +180,40 @@ jobs:
       - name: Verify project structure
         run: find lib/ -type f | sort
 
-      - name: Get dependencies
-        run: flutter pub get
+      - name: Clean and get dependencies
+        run: |
+          flutter clean
+          flutter pub get
 
-      - name: Build APK
-        run: flutter build apk --release --no-tree-shake-icons
+      - name: Build APK (verbose, capture all output)
+        run: |
+          flutter build apk --release -v 2>&1 | tee /tmp/build_output.txt
+        continue-on-error: true
 
-      - name: Find APK file
+      - name: Search for APK everywhere
         id: findapk
         run: |
-          echo "=== Searching for APK files ==="
-          find . -name "*.apk" -not -path "./.git/*" 2>/dev/null
-          find / -name "*.apk" 2>/dev/null | head -20
+          echo "=== Searching for APK in entire filesystem ==="
+          find / -name "*.apk" 2>/dev/null | grep -v "platforms" | head -20
           
-          APK_FILE=$(find . -name "*.apk" -not -path "./.git/*" | head -1)
+          APK_FILE=$(find / -name "*.apk" 2>/dev/null | grep -v "platforms" | head -1)
+          echo "Found APK: $APK_FILE"
           echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+          
+          echo "=== Last 50 lines of build output ==="
+          tail -50 /tmp/build_output.txt
 
-      - name: Upload APK
+      - name: Upload APK (if found)
+        if: steps.findapk.outputs.apk_path != ''
         uses: actions/upload-artifact@v4
         with:
           name: daily-collection-apk
-          path: |
-            build/app/outputs/flutter-apk/*.apk
-            **/*.apk
+          path: ${{ steps.findapk.outputs.apk_path }}
 
-      - name: Upload build logs on failure
-        if: failure()
+      - name: Upload build output (for debugging)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
-          path: |
-            build/
-            android/app/build/
-            
+          name: build-output
+          path: /tmp/build_output.txt
+          
