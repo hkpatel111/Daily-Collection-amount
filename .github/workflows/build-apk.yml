@@ -133,7 +133,7 @@ jobs:
           </manifest>
           MANIFEST
 
-      - name: Fix telephony namespace issue
+      - name: Fix telephony namespace and JVM target issues
         run: |
           cat >> android/build.gradle << 'GRADLEFIX'
 
@@ -149,6 +149,19 @@ jobs:
                           }
                       }
                   }
+                  if (project.hasProperty("android")) {
+                      project.android {
+                          compileOptions {
+                              sourceCompatibility JavaVersion.VERSION_17
+                              targetCompatibility JavaVersion.VERSION_17
+                          }
+                      }
+                  }
+                  project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                      kotlinOptions {
+                          jvmTarget = "17"
+                      }
+                  }
               }
           }
           GRADLEFIX
@@ -157,10 +170,6 @@ jobs:
         run: |
           echo "=== lib/ structure ==="
           find lib/ -type f | sort
-          echo "=== sms_service permission ==="
-          grep -n "requestSms" lib/services/sms_service.dart
-          echo "=== app.dart cardTheme ==="
-          grep -n "cardTheme" lib/app.dart
 
       - name: Get dependencies
         run: flutter pub get
