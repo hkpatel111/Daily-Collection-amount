@@ -133,8 +133,13 @@ jobs:
           </manifest>
           MANIFEST
 
-      - name: Fix telephony namespace and JVM target issues
+      - name: Fix all Gradle compatibility issues
         run: |
+          # 1. Set compileSdk to 36 in app/build.gradle
+          sed -i 's/compileSdk 34/compileSdk 36/g' android/app/build.gradle
+          sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' android/app/build.gradle
+          
+          # 2. Add namespace + JVM target + compileSdk fixes to all subprojects
           cat >> android/build.gradle << 'GRADLEFIX'
 
           subprojects {
@@ -146,6 +151,9 @@ jobs:
                               if (namespace) {
                                   android.namespace = namespace
                               }
+                          }
+                          if (android.compileSdk == null || android.compileSdk < 36) {
+                              android.compileSdk = 36
                           }
                       }
                   }
@@ -165,11 +173,15 @@ jobs:
               }
           }
           GRADLEFIX
+          
+          echo "=== android/app/build.gradle ==="
+          cat android/app/build.gradle
+          echo ""
+          echo "=== android/build.gradle (last 30 lines) ==="
+          tail -30 android/build.gradle
 
       - name: Verify project structure
-        run: |
-          echo "=== lib/ structure ==="
-          find lib/ -type f | sort
+        run: find lib/ -type f | sort
 
       - name: Get dependencies
         run: flutter pub get
