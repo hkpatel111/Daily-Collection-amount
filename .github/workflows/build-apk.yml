@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-      - uses: actions/checkout@v5
+        uses: actions/checkout@v5
 
       - name: Set up Java 17 (Zulu)
         uses: actions/setup-java@v5
@@ -24,23 +24,46 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Locate project directory
+      - name: Find and extract project ZIP
         run: |
-          # Ye check karega ki project files kahan hain
-          find . -maxdepth 3 -name "pubspec.yaml"
+          ZIP=$(ls -1 *.zip 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$ZIP" ]; then ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n 1); fi
+          if [ -z "$ZIP" ]; then echo "No ZIP found in repo root!"; exit 1; fi
+          echo "Using: $ZIP"
+          unzip -o "$ZIP" -d /tmp/project_src
 
-      - name: Install dependencies & Build APK
+      - name: Copy project files
         run: |
-          # Agar pubspec.yaml kisi subfolder mein hai toh find karke wahan run hoga
-          DIR=$(dirname $(find . -name "pubspec.yaml" | head -n 1))
-          echo "Found Flutter project at: $DIR"
-          cd "$DIR"
+          mkdir -p /tmp/build
+          # Agar zip ke andar folder ka naam alag hai toh yeh use automatically detect kar lega
+          SRC_DIR=$(find /tmp/project_src -maxdepth 2 -name "pubspec.yaml" | xargs dirname | head -n 1)
+          if [ -z "$SRC_DIR" ]; then SRC_DIR="/tmp/project_src/daily_collection_app"; fi
+          echo "Copying from: $SRC_DIR"
+          cp -r "$SRC_DIR/. * /tmp/build/" 2>/dev/null || cp -r /tmp/project_src/. /tmp/build/
+          ls -la /tmp/build
+
+      - name: Flutter clean + pub get
+        working-directory: /tmp/build
+        run: |
+          flutter clean
           flutter pub get
+
+      - name: Build release APK
+        working-directory: /tmp/build
+        run: |
           flutter build apk --release
 
-      - name: Upload APK Artifact
+      - name: Find and Save APK
+        if: always()
+        run: |
+          APK=$(find /tmp/build -name "*.apk" 2>/dev/null | head -n 1)
+          echo "APK found: $APK"
+          mkdir -p /tmp/apk_out
+          if [ -n "$APK" ]; then cp "$APK" /tmp/apk_out/daily-collection.apk; fi
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: daily-collection-release-apk
-          path: "**/app-release.apk"
+          name: daily-collection-apk
+          path: /tmp/apk_out/
           if-no-files-found: error
