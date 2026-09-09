@@ -12,11 +12,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Set up Java 11
+      - name: Set up Java 17 (Zulu)
         uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
-          java-version: '11'
+          java-version: '17'
 
       - name: Set up Flutter (stable)
         uses: subosito/flutter-action@v2
@@ -53,7 +53,7 @@ jobs:
         run: |
           flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Automatic Fix for Telephony Plugin & JVM Target Match
+      - name: Automatic Fix for Telephony Plugin & Java 17 Match
         working-directory: /tmp/build
         run: |
           # 1. Telephony namespace fix in pub-cache
@@ -64,7 +64,7 @@ jobs:
             fi
           done
 
-          # 2. Force Java 11 / Kotlin 11 compatibility across all subprojects to kill the error
+          # 2. Force Java 17 compatibility across all subprojects
           BUILD_GRADLE="android/build.gradle"
           if [ -f "$BUILD_GRADLE" ]; then
             cat >> "$BUILD_GRADLE" << 'EOF'
@@ -77,15 +77,15 @@ jobs:
                               namespace = project.group
                           }
                           compileOptions {
-                              sourceCompatibility JavaVersion.VERSION_11
-                              targetCompatibility JavaVersion.VERSION_11
+                              sourceCompatibility JavaVersion.VERSION_17
+                              targetCompatibility JavaVersion.VERSION_17
                           }
                       }
                   }
               }
               tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
                   kotlinOptions {
-                      jvmTarget = '11'
+                      jvmTarget = '17'
                   }
               }
           }
