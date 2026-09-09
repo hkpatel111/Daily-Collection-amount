@@ -63,7 +63,7 @@ jobs:
                   if (project.hasProperty('android')) {
                       project.android {
                           if (namespace == null) {
-                              namespace = project.group
+                              namespace = 'com.dailyhisab.daily_collection_app'
                           }
                       }
                   }
