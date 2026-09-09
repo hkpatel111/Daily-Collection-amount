@@ -24,139 +24,16 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Find and extract project ZIP
-        run: |
-          ZIP=$(ls -1 daily_collection*.zip 2>/dev/null | sort -V | tail -n 1)
-          if [ -z "$ZIP" ]; then ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n 1); fi
-          if [ -z "$ZIP" ]; then echo "No ZIP found in repo root!"; exit 1; fi
-          echo "Using: $ZIP"
-          unzip -o "$ZIP" -d /tmp/project_src
+      - name: Install dependencies
+        working-directory: daily_collection_app
+        run: flutter pub get
 
-      - name: Copy project files
-        run: |
-          mkdir -p /tmp/build
-          cp -r /tmp/project_src/daily_collection_app/. /tmp/build/
-          ls -la /tmp/build
-
-      - name: Create Flutter scaffolding (android/ios folders)
-        working-directory: /tmp/build
-        run: flutter create --org com.dailyhisab --project-name daily_collection_app .
-
-      - name: Write AndroidManifest.xml (SMS + Storage permissions)
-        working-directory: /tmp/build
-        run: |
-          mkdir -p android/app/src/main
-          cat > android/app/src/main/AndroidManifest.xml << 'MANIFEST_EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.SEND_SMS" />
-              <uses-permission android:name="android.permission.READ_SMS" />
-              <uses-permission android:name="android.permission.RECEIVE_SMS" />
-              <uses-permission android:name="android.permission.USE_FINGERPRINT" />
-              <uses-permission android:name="android.permission.READ_CONTACTS" />
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-              <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-              <application
-                  android:requestLegacyExternalStorage="true"
-                  android:label="Daily Collection"
-                  android:name="${applicationName}"
-                  android:icon="@mipmap/ic_launcher">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:launchMode="singleTop"
-                      android:theme="@style/LaunchTheme"
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-                      android:hardwareAccelerated="true"
-                      android:windowSoftInputMode="adjustResize">
-                      <meta-data
-                        android:name="io.flutter.embedding.android.NormalTheme"
-                        android:resource="@style/NormalTheme" />
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-                  </activity>
-                  <meta-data
-                      android:name="flutterEmbedding"
-                      android:value="2" />
-              </application>
-              <queries>
-                  <intent>
-                      <action android:name="android.intent.action.PROCESS_TEXT"/>
-                      <data android:mimeType="text/plain"/>
-                  </intent>
-              </queries>
-          </manifest>
-          MANIFEST_EOF
-
-      - name: Fix Gradle (compileSdk 36, JVM 17)
-        working-directory: /tmp/build
-        run: |
-          find android -name "build.gradle" -o -name "build.gradle.kts" | xargs -r sed -i \
-            -e 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/g' \
-            -e 's/compileSdk = 34/compileSdk = 36/g' \
-            -e 's/compileSdk = 35/compileSdk = 36/g' \
-            -e 's/VERSION_1_8/VERSION_17/g' \
-            -e 's/VERSION_11/VERSION_17/g' \
-            -e 's/VERSION_16/VERSION_17/g'
-          grep -n "compileSdk" android/app/build.gradle* || true
-
-      - name: Namespace fix for subprojects (telephony)
-        working-directory: /tmp/build
-        run: |
-          if [ -f android/build.gradle ]; then
-          cat >> android/build.gradle << 'EOF'
-          subprojects {
-              afterEvaluate { project ->
-                  if (project.hasProperty('android')) {
-                      project.android {
-                          if (namespace == null) {
-                              namespace = 'com.dailyhisab.daily_collection_app'
-                          }
-                      }
-                  }
-              }
-          }
-          EOF
-          fi
-
-      - name: Flutter clean + pub get
-        working-directory: /tmp/build
-        run: |
-          flutter clean
-          flutter pub get
-
-      - name: Build release APK
-        working-directory: /tmp/build
-        continue-on-error: true
-        run: |
-          flutter build apk --release -v 2>&1 | tee /tmp/build_log.txt
-          exit ${PIPESTATUS[0]}
-
-      - name: Find APK
-        if: always()
-        run: |
-          APK=$(find /tmp/build -name "*.apk" 2>/dev/null | head -n 1)
-          if [ -z "$APK" ]; then APK=$(find / -name "app-release.apk" 2>/dev/null | head -n 1); fi
-          echo "APK found: $APK"
-          mkdir -p /tmp/apk_out
-          if [ -n "$APK" ]; then cp "$APK" /tmp/apk_out/daily-collection-v8.apk; fi
-
-      - name: Upload APK artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: daily-collection-apk
-          path: /tmp/apk_out/
-          if-no-files-found: warn
-
-      - name: Upload build output (for debugging)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output
-          path: /tmp/build_log.txt
-          if-no-files-found: ignore
+      - name: Build Release APK
+        working-directory: daily_collection_app
+        run: flutter build apk --release
           
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-collection-release-apk
+          path: daily_collection_app/build/app/outputs/flutter-apk/app-release.apk
