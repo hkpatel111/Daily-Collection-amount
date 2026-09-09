@@ -70,45 +70,12 @@ jobs:
       - name: Flutter create scaffolding
         run: flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Flutter pub get
-        run: flutter pub get
-
-      - name: Patch telephony namespace in pub cache
-        run: |
-          # telephony package doesn't have namespace in its build.gradle
-          # AGP 9.x requires it. Patch the file directly in pub cache.
-          TELEPHONY_GRADLE=$(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle" 2>/dev/null | head -1)
-          if [ -n "$TELEPHONY_GRADLE" ]; then
-            echo "Found telephony build.gradle: $TELEPHONY_GRADLE"
-            if ! grep -q "namespace" "$TELEPHONY_GRADLE"; then
-              echo "Adding namespace to telephony build.gradle..."
-              # Add namespace right after 'android {' block
-              sed -i '/android {/a \    namespace "com.shounakmulay.telephony"' "$TELEPHONY_GRADLE"
-              echo "Patched successfully"
-              grep -n "namespace" "$TELEPHONY_GRADLE"
-            else
-              echo "Namespace already present"
-            fi
-          else
-            echo "WARNING: telephony build.gradle not found in pub cache"
-          fi
-
-          # Also check for any other plugins missing namespace
-          for GRADLE_FILE in $(find /home/runner/.pub-cache -path "*/android/build.gradle" 2>/dev/null); do
-            if ! grep -q "namespace" "$GRADLE_FILE"; then
-              PKG_NAME=$(echo "$GRADLE_FILE" | sed 's|.*/pub-cache/hosted/pub.dev/||' | sed 's|/android/build.gradle||')
-              echo "WARNING: $PKG_NAME also missing namespace"
-            fi
-          done
-
       - name: Write AndroidManifest.xml
         run: |
           cat > android/app/src/main/AndroidManifest.xml << 'MANIFEST_EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.SEND_SMS"/>
               <uses-permission android:name="android.permission.READ_SMS"/>
-              <uses-permission android:name="android.permission.RECEIVE_SMS"/>
-              <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
               <uses-permission android:name="android.permission.READ_CONTACTS"/>
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
@@ -171,12 +138,13 @@ jobs:
             sed -i 's/targetCompatibility = JavaVersion.VERSION_11/targetCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
 
             echo "Done patching $APP_GRADLE"
+            head -50 "$APP_GRADLE"
           fi
 
       - name: Flutter clean
         run: flutter clean
 
-      - name: Flutter pub get (after patch)
+      - name: Flutter pub get
         run: flutter pub get 2>&1 | tee pub_get_log.txt
 
       - name: Build APK
