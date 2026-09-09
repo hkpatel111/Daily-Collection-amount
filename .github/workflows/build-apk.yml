@@ -30,17 +30,25 @@ jobs:
           if [ -z "$ZIP" ]; then ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n 1); fi
           if [ -z "$ZIP" ]; then echo "No ZIP found in repo root!"; exit 1; fi
           echo "Using: $ZIP"
+          rm -rf /tmp/project_src
+          mkdir -p /tmp/project_src
           unzip -o "$ZIP" -d /tmp/project_src
 
-      - name: Copy project files
+      - name: Copy project files correctly
         run: |
           mkdir -p /tmp/build
-          # Agar zip ke andar folder ka naam alag hai toh yeh use automatically detect kar lega
-          SRC_DIR=$(find /tmp/project_src -maxdepth 2 -name "pubspec.yaml" | xargs dirname | head -n 1)
-          if [ -z "$SRC_DIR" ]; then SRC_DIR="/tmp/project_src/daily_collection_app"; fi
-          echo "Copying from: $SRC_DIR"
-          cp -r "$SRC_DIR/. * /tmp/build/" 2>/dev/null || cp -r /tmp/project_src/. /tmp/build/
+          # Agar ZIP ke andar direct files hain ya folder hai, yeh dono handle kar lega
+          if [ -d "/tmp/project_src/daily_collection_app" ]; then
+            cp -r /tmp/project_src/daily_collection_app/. /tmp/build/
+          else
+            cp -r /tmp/project_src/. /tmp/build/
+          fi
+          # Verify karne ke liye ki pubspec.yaml wahan pahuncha ya nahi
           ls -la /tmp/build
+          if [ ! -f "/tmp/build/pubspec.yaml" ]; then
+            echo "Error: pubspec.yaml not found in /tmp/build!"
+            exit 1
+          fi
 
       - name: Flutter clean + pub get
         working-directory: /tmp/build
