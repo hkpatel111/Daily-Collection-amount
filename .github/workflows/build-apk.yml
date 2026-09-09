@@ -63,18 +63,43 @@ jobs:
             if [ -d "$PROJECT_DIR/android" ]; then
               cp -r $PROJECT_DIR/android .
             fi
-            if [ -f "$PROJECT_DIR/.gitignore" ]; then
-              cp $PROJECT_DIR/.gitignore .
-            fi
-            if [ -f "$PROJECT_DIR/README.md" ]; then
-              cp $PROJECT_DIR/README.md .
-            fi
           fi
           echo "Files in root:"
           ls -la
 
       - name: Flutter create scaffolding
         run: flutter create --org com.dailyhisab --project-name daily_collection_app .
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Patch telephony namespace in pub cache
+        run: |
+          # telephony package doesn't have namespace in its build.gradle
+          # AGP 9.x requires it. Patch the file directly in pub cache.
+          TELEPHONY_GRADLE=$(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle" 2>/dev/null | head -1)
+          if [ -n "$TELEPHONY_GRADLE" ]; then
+            echo "Found telephony build.gradle: $TELEPHONY_GRADLE"
+            if ! grep -q "namespace" "$TELEPHONY_GRADLE"; then
+              echo "Adding namespace to telephony build.gradle..."
+              # Add namespace right after 'android {' block
+              sed -i '/android {/a \    namespace "com.shounakmulay.telephony"' "$TELEPHONY_GRADLE"
+              echo "Patched successfully"
+              grep -n "namespace" "$TELEPHONY_GRADLE"
+            else
+              echo "Namespace already present"
+            fi
+          else
+            echo "WARNING: telephony build.gradle not found in pub cache"
+          fi
+
+          # Also check for any other plugins missing namespace
+          for GRADLE_FILE in $(find /home/runner/.pub-cache -path "*/android/build.gradle" 2>/dev/null); do
+            if ! grep -q "namespace" "$GRADLE_FILE"; then
+              PKG_NAME=$(echo "$GRADLE_FILE" | sed 's|.*/pub-cache/hosted/pub.dev/||' | sed 's|/android/build.gradle||')
+              echo "WARNING: $PKG_NAME also missing namespace"
+            fi
+          done
 
       - name: Write AndroidManifest.xml
         run: |
@@ -116,16 +141,12 @@ jobs:
 
       - name: Fix Gradle settings
         run: |
-          # Detect which build file format Flutter generated (Groovy .gradle or Kotlin .kts)
+          # Detect which build file format Flutter generated
           APP_GRADLE=""
           if [ -f "android/app/build.gradle.kts" ]; then
             APP_GRADLE="android/app/build.gradle.kts"
           elif [ -f "android/app/build.gradle" ]; then
             APP_GRADLE="android/app/build.gradle"
-          else
-            echo "WARNING: Neither build.gradle nor build.gradle.kts found in android/app/"
-            ls -la android/app/ 2>/dev/null || echo "android/app/ does not exist"
-            ls -la android/ 2>/dev/null || echo "android/ does not exist"
           fi
 
           echo "App Gradle file: $APP_GRADLE"
@@ -148,23 +169,14 @@ jobs:
             sed -i 's/targetCompatibility = JavaVersion.VERSION_1_8/targetCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
             sed -i 's/sourceCompatibility = JavaVersion.VERSION_11/sourceCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
             sed -i 's/targetCompatibility = JavaVersion.VERSION_11/targetCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
-            sed -i 's/sourceCompatibility = JavaVersion.VERSION_16/sourceCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
-            sed -i 's/targetCompatibility = JavaVersion.VERSION_16/targetCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
 
             echo "Done patching $APP_GRADLE"
-            echo "--- Content preview ---"
-            head -50 "$APP_GRADLE"
           fi
-
-          # Note: No namespace fix needed - AGP 9.x handles this automatically.
-          # The old afterEvaluate block caused: Cannot run Project.afterEvaluate when already evaluated
-
-          echo "=== Gradle fix complete ==="
 
       - name: Flutter clean
         run: flutter clean
 
-      - name: Flutter pub get
+      - name: Flutter pub get (after patch)
         run: flutter pub get 2>&1 | tee pub_get_log.txt
 
       - name: Build APK
