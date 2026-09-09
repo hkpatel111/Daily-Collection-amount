@@ -12,11 +12,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Set up Java 17 (Zulu)
+      - name: Set up Java 11
         uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '11'
 
       - name: Set up Flutter (stable)
         uses: subosito/flutter-action@v2
@@ -53,23 +53,44 @@ jobs:
         run: |
           flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Force Global Kotlin JVM Target 17 & Telephony Namespace Fix
+      - name: Automatic Fix for Telephony Plugin & JVM Target Match
         working-directory: /tmp/build
         run: |
-          # 1. Force global Kotlin JVM target in gradle.properties to fix 1.8 vs 11/17 mismatch
-          if [ -f android/gradle.properties ]; then
-            echo "kotlin.compiler.jvmTarget=17" >> android/gradle.properties
-          else
-            echo "kotlin.compiler.jvmTarget=17" > android/gradle.properties
-          fi
-
-          # 2. Telephony plugin namespace fix inside pub-cache
+          # 1. Telephony namespace fix in pub-cache
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
             if ! grep -q "namespace" "$f"; then
               echo "Injecting namespace into $f"
               sed -i "/android {/a \    namespace 'com.unact.telephony'" "$f"
             fi
           done
+
+          # 2. Force Java 11 / Kotlin 11 compatibility across all subprojects to kill the error
+          BUILD_GRADLE="android/build.gradle"
+          if [ -f "$BUILD_GRADLE" ]; then
+            cat >> "$BUILD_GRADLE" << 'EOF'
+
+          subprojects {
+              afterEvaluate { project ->
+                  if (project.hasProperty('android')) {
+                      project.android {
+                          if (namespace == null) {
+                              namespace = project.group
+                          }
+                          compileOptions {
+                              sourceCompatibility JavaVersion.VERSION_11
+                              targetCompatibility JavaVersion.VERSION_11
+                          }
+                      }
+                  }
+              }
+              tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                  kotlinOptions {
+                      jvmTarget = '11'
+                  }
+              }
+          }
+          EOF
+          fi
 
       - name: Flutter clean + pub get
         working-directory: /tmp/build
