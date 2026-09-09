@@ -53,21 +53,31 @@ jobs:
         run: |
           flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Ultimate JVM Toolchain & Namespace Fix for Telephony
+      - name: Flutter clean + pub get
         working-directory: /tmp/build
         run: |
-          # 1. Telephony namespace fix in pub-cache
+          flutter clean
+          flutter pub get
+
+      - name: Post-PubGet Ultimate Fix for Telephony & JVM Target 17
+        working-directory: /tmp/build
+        run: |
+          # 1. Directly patch telephony build.gradle in pub-cache AFTER pub get
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
+            echo "Patching telephony build.gradle at $f"
             if ! grep -q "namespace" "$f"; then
-              echo "Injecting namespace into $f"
               sed -i "/android {/a \    namespace 'com.unact.telephony'" "$f"
+            fi
+            if grep -q "jvmTarget" "$f"; then
+              sed -i "s/jvmTarget.*=.*['\"].*['\"]/jvmTarget = '17'/g" "$f"
+            else
+              sed -i "/android {/a \    kotlinOptions { jvmTarget = '17' }" "$f"
             fi
           done
 
-          # 2. Force JVM Toolchain 17 and jvmTarget across all subprojects to kill the 1.8 mismatch error
-          BUILD_GRADLE="android/build.gradle"
-          if [ -f "$BUILD_GRADLE" ]; then
-            cat >> "$BUILD_GRADLE" << 'EOF'
+          # 2. Append subprojects rule to android/build.gradle
+          if [ -f android/build.gradle ]; then
+            cat >> android/build.gradle << 'EOF'
 
           subprojects {
               afterEvaluate { project ->
@@ -83,11 +93,6 @@ jobs:
                       }
                   }
               }
-              plugins.withId('kotlin-android') {
-                  kotlin {
-                      jvmToolchain(17)
-                  }
-              }
               tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
                   kotlinOptions {
                       jvmTarget = '17'
@@ -96,12 +101,6 @@ jobs:
           }
           EOF
           fi
-
-      - name: Flutter clean + pub get
-        working-directory: /tmp/build
-        run: |
-          flutter clean
-          flutter pub get
 
       - name: Build release APK
         working-directory: /tmp/build
