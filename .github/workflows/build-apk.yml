@@ -37,18 +37,21 @@ jobs:
       - name: Copy project files correctly
         run: |
           mkdir -p /tmp/build
-          # Agar ZIP ke andar direct files hain ya folder hai, yeh dono handle kar lega
           if [ -d "/tmp/project_src/daily_collection_app" ]; then
             cp -r /tmp/project_src/daily_collection_app/. /tmp/build/
           else
             cp -r /tmp/project_src/. /tmp/build/
           fi
-          # Verify karne ke liye ki pubspec.yaml wahan pahuncha ya nahi
           ls -la /tmp/build
           if [ ! -f "/tmp/build/pubspec.yaml" ]; then
             echo "Error: pubspec.yaml not found in /tmp/build!"
             exit 1
           fi
+
+      - name: Create Flutter Android scaffolding (v2 embedding fix)
+        working-directory: /tmp/build
+        run: |
+          flutter create --org com.dailyhisab --project-name daily_collection_app .
 
       - name: Flutter clean + pub get
         working-directory: /tmp/build
