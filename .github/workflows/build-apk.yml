@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
       - name: Set up Java 17 (Zulu)
         uses: actions/setup-java@v5
@@ -24,16 +24,23 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Install dependencies
-        working-directory: daily_collection_app
-        run: flutter pub get
+      - name: Locate project directory
+        run: |
+          # Ye check karega ki project files kahan hain
+          find . -maxdepth 3 -name "pubspec.yaml"
 
-      - name: Build Release APK
-        working-directory: daily_collection_app
-        run: flutter build apk --release
-          
+      - name: Install dependencies & Build APK
+        run: |
+          # Agar pubspec.yaml kisi subfolder mein hai toh find karke wahan run hoga
+          DIR=$(dirname $(find . -name "pubspec.yaml" | head -n 1))
+          echo "Found Flutter project at: $DIR"
+          cd "$DIR"
+          flutter pub get
+          flutter build apk --release
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: daily-collection-release-apk
-          path: daily_collection_app/build/app/outputs/flutter-apk/app-release.apk
+          path: "**/app-release.apk"
+          if-no-files-found: error
