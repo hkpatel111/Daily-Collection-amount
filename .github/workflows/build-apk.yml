@@ -53,7 +53,7 @@ jobs:
         run: |
           flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Automatic Fix for Telephony Plugin & Java 17 Match
+      - name: Ultimate JVM Toolchain & Namespace Fix for Telephony
         working-directory: /tmp/build
         run: |
           # 1. Telephony namespace fix in pub-cache
@@ -64,7 +64,7 @@ jobs:
             fi
           done
 
-          # 2. Force Java 17 compatibility across all subprojects
+          # 2. Force JVM Toolchain 17 and jvmTarget across all subprojects to kill the 1.8 mismatch error
           BUILD_GRADLE="android/build.gradle"
           if [ -f "$BUILD_GRADLE" ]; then
             cat >> "$BUILD_GRADLE" << 'EOF'
@@ -81,6 +81,11 @@ jobs:
                               targetCompatibility JavaVersion.VERSION_17
                           }
                       }
+                  }
+              }
+              plugins.withId('kotlin-android') {
+                  kotlin {
+                      jvmToolchain(17)
                   }
               }
               tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
