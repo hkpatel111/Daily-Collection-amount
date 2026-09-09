@@ -249,11 +249,11 @@ jobs:
         run: flutter clean
 
       - name: Flutter pub get
-        run: flutter pub get
+        run: flutter pub get 2>&1 | tee pub_get_log.txt
 
       - name: Build APK
         continue-on-error: true
-        run: flutter build apk --release -v
+        run: flutter build apk --release -v 2>&1 | tee build_log.txt
 
       - name: Find APK
         id: find_apk
@@ -283,4 +283,5 @@ jobs:
             pubspec.yaml
             .flutter-plugins
             .flutter-plugins-dependencies
-            
+            pub_get_log.txt
+            build_log.txt
