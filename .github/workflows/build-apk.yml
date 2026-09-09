@@ -59,8 +59,17 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Fix missing namespaces in pub plugins (Telephony fix)
+      - name: Fix Telephony and plugin namespaces explicitly
         run: |
+          # Specifically patch telephony plugin build.gradle with its correct namespace
+          for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
+            if ! grep -q "namespace" "$f"; then
+              echo "Injecting namespace into $f"
+              sed -i "/android {/a \    namespace 'com.unact.telephony'" "$f"
+            fi
+          done
+
+          # General fallback sweep for any other dependencies
           find /home/runner/.pub-cache -name "AndroidManifest.xml" | while read manifest; do
             if grep -q "package=" "$manifest"; then
               pkg=$(grep -o 'package="[^"]*"' "$manifest" | head -1 | cut -d'"' -f2)
