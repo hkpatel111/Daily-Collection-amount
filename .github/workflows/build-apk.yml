@@ -53,15 +53,10 @@ jobs:
         run: |
           flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Flutter clean + pub get
+      - name: Fix Telephony Namespace & Global Kotlin JVM Target
         working-directory: /tmp/build
         run: |
-          flutter clean
-          flutter pub get
-
-      - name: Fix Telephony Namespace & Kotlin JVM Target Compatibility
-        run: |
-          # 1. Namespace fix for telephony
+          # 1. Namespace fix for telephony plugin
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
             if ! grep -q "namespace" "$f"; then
               echo "Injecting namespace into $f"
@@ -69,13 +64,34 @@ jobs:
             fi
           done
 
-          # 2. Fix Kotlin JVM target compatibility for all subprojects (forces 17 to match Java)
-          for f in $(find /home/runner/.pub-cache -name "build.gradle"); do
-            if ! grep -q "kotlinOptions" "$f"; then
-              echo "Adding kotlinOptions jvmTarget to $f"
-              sed -i "/android {/a \    android { kotlinOptions { jvmTarget = '17' } }" "$f" || true
-            fi
-          done
+          # 2. Add global subprojects fix for Kotlin JVM target & namespace in android/build.gradle
+          if [ -f android/build.gradle ]; then
+            cat >> android/build.gradle << 'EOF'
+
+          subprojects {
+              afterEvaluate { project ->
+                  if (project.hasProperty('android')) {
+                      project.android {
+                          if (namespace == null) {
+                              namespace = project.group
+                          }
+                      }
+                  }
+                  project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                      kotlinOptions {
+                          jvmTarget = '17'
+                      }
+                  }
+              }
+          }
+          EOF
+          fi
+
+      - name: Flutter clean + pub get
+        working-directory: /tmp/build
+        run: |
+          flutter clean
+          flutter pub get
 
       - name: Build release APK
         working-directory: /tmp/build
