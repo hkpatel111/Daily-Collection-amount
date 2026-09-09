@@ -59,20 +59,27 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Fix Telephony Namespace & Force JVM Target to 17 (Post-PubGet Fix)
-        working-directory: /tmp/build
+      - name: Ultimate Telephony Fix (Namespace & Kotlin JVM Target 17)
         run: |
-          # 1. Namespace fix for telephony plugin inside pub-cache
+          # Telephony plugin ke andar exact jaakar namespace aur jvmTarget 17 forcefully inject karna
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
+            echo "Patching telephony build.gradle at $f"
+            
+            # 1. Add namespace if missing
             if ! grep -q "namespace" "$f"; then
-              echo "Injecting namespace into $f"
               sed -i "/android {/a \    namespace 'com.unact.telephony'" "$f"
+            fi
+            
+            # 2. Add kotlinOptions jvmTarget = '17' inside android block
+            if ! grep -q "jvmTarget" "$f"; then
+              sed -i "/android {/a \    kotlinOptions { jvmTarget = '17' }" "$f"
             fi
           done
 
-          # 2. Append subprojects rule at the very end of android/build.gradle so it overrides everything safely
-          if [ -f android/build.gradle ]; then
-            cat >> android/build.gradle << 'EOF'
+          # 3. Global subprojects fallback for safety across all plugins
+          BUILD_GRADLE="/tmp/build/android/build.gradle"
+          if [ -f "$BUILD_GRADLE" ]; then
+            cat >> "$BUILD_GRADLE" << 'EOF'
 
           subprojects {
               afterEvaluate { project ->
