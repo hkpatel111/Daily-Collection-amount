@@ -59,7 +59,7 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Ultimate Telephony Fix (Manifest Package Removal & Java 11 Match)
+      - name: Ultimate Fix (Manifest, Telephony, & SDK 36 Upgrade)
         working-directory: /tmp/build
         run: |
           # 1. Remove obsolete package attribute from telephony AndroidManifest.xml
@@ -82,7 +82,16 @@ jobs:
             fi
           done
 
-          # 3. Force Java 11 across all subprojects
+          # 3. Force compileSdk and targetSdk to 36 in build.gradle to satisfy file_picker & lifecycle
+          BUILD_GRADLE="android/app/build.gradle"
+          if [ -f "$BUILD_GRADLE" ]; then
+            sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 36/g' "$BUILD_GRADLE" || true
+            sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 36/g' "$BUILD_GRADLE" || true
+            sed -i 's/compileSdk = [0-9]*/compileSdk = 36/g' "$BUILD_GRADLE" || true
+            sed -i 's/targetSdk = [0-9]*/targetSdk = 36/g' "$BUILD_GRADLE" || true
+          fi
+
+          # 4. Force Java 11 and Kotlin 11 across all subprojects
           if [ -f android/build.gradle ]; then
             cat >> android/build.gradle << 'EOF'
 
