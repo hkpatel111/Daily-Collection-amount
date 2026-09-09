@@ -12,7 +12,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Set up Java 17 (Zulu)
+      - name: Set up Java 17 (Zulu for Gradle Runner)
         uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
@@ -59,23 +59,23 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Post-PubGet Ultimate Fix for Telephony & JVM Target 17
+      - name: Unified Java 11 & Kotlin 11 Match for Telephony and Plugins
         working-directory: /tmp/build
         run: |
-          # 1. Directly patch telephony build.gradle in pub-cache AFTER pub get
+          # 1. Telephony plugin namespace fix in pub-cache
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
             echo "Patching telephony build.gradle at $f"
             if ! grep -q "namespace" "$f"; then
               sed -i "/android {/a \    namespace 'com.unact.telephony'" "$f"
             fi
             if grep -q "jvmTarget" "$f"; then
-              sed -i "s/jvmTarget.*=.*['\"].*['\"]/jvmTarget = '17'/g" "$f"
+              sed -i "s/jvmTarget.*=.*['\"].*['\"]/jvmTarget = '11'/g" "$f"
             else
-              sed -i "/android {/a \    kotlinOptions { jvmTarget = '17' }" "$f"
+              sed -i "/android {/a \    kotlinOptions { jvmTarget = '11' }" "$f"
             fi
           done
 
-          # 2. Append subprojects rule to android/build.gradle
+          # 2. Force Java 11 and Kotlin 11 across all subprojects so they match perfectly
           if [ -f android/build.gradle ]; then
             cat >> android/build.gradle << 'EOF'
 
@@ -87,15 +87,15 @@ jobs:
                               namespace = project.group
                           }
                           compileOptions {
-                              sourceCompatibility JavaVersion.VERSION_17
-                              targetCompatibility JavaVersion.VERSION_17
+                              sourceCompatibility JavaVersion.VERSION_11
+                              targetCompatibility JavaVersion.VERSION_11
                           }
                       }
                   }
               }
               tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
                   kotlinOptions {
-                      jvmTarget = '17'
+                      jvmTarget = '11'
                   }
               }
           }
