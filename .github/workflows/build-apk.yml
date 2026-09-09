@@ -59,14 +59,21 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Unified Java 11 & Kotlin 11 Match for Telephony and Plugins
+      - name: Ultimate Telephony Fix (Manifest Package Removal & Java 11 Match)
         working-directory: /tmp/build
         run: |
-          # 1. Telephony plugin namespace fix in pub-cache
+          # 1. Remove obsolete package attribute from telephony AndroidManifest.xml
+          for m in $(find /home/runner/.pub-cache -path "*/telephony-*/android/src/main/AndroidManifest.xml"); do
+            echo "Removing package attribute from manifest at $m"
+            sed -i 's/package="[^"]*"//g' "$m"
+            sed -i "s/package='[^']*'//g" "$m"
+          done
+
+          # 2. Patch telephony build.gradle for namespace and jvmTarget = '11'
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
             echo "Patching telephony build.gradle at $f"
             if ! grep -q "namespace" "$f"; then
-              sed -i "/android {/a \    namespace 'com.unact.telephony'" "$f"
+              sed -i "/android {/a \    namespace 'com.shounakmulay.telephony'" "$f"
             fi
             if grep -q "jvmTarget" "$f"; then
               sed -i "s/jvmTarget.*=.*['\"].*['\"]/jvmTarget = '11'/g" "$f"
@@ -75,7 +82,7 @@ jobs:
             fi
           done
 
-          # 2. Force Java 11 and Kotlin 11 across all subprojects so they match perfectly
+          # 3. Force Java 11 across all subprojects
           if [ -f android/build.gradle ]; then
             cat >> android/build.gradle << 'EOF'
 
