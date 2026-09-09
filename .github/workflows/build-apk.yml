@@ -59,9 +59,9 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Fix Telephony and plugin namespaces explicitly
+      - name: Fix Telephony Namespace & Kotlin JVM Target Compatibility
         run: |
-          # Specifically patch telephony plugin build.gradle with its correct namespace
+          # 1. Namespace fix for telephony
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
             if ! grep -q "namespace" "$f"; then
               echo "Injecting namespace into $f"
@@ -69,15 +69,11 @@ jobs:
             fi
           done
 
-          # General fallback sweep for any other dependencies
-          find /home/runner/.pub-cache -name "AndroidManifest.xml" | while read manifest; do
-            if grep -q "package=" "$manifest"; then
-              pkg=$(grep -o 'package="[^"]*"' "$manifest" | head -1 | cut -d'"' -f2)
-              gradle_file=$(dirname "$manifest")/../build.gradle
-              if [ -f "$gradle_file" ] && ! grep -q "namespace" "$gradle_file"; then
-                echo "Adding namespace $pkg to $gradle_file"
-                sed -i "/android {/a \    namespace '$pkg'" "$gradle_file"
-              fi
+          # 2. Fix Kotlin JVM target compatibility for all subprojects (forces 17 to match Java)
+          for f in $(find /home/runner/.pub-cache -name "build.gradle"); do
+            if ! grep -q "kotlinOptions" "$f"; then
+              echo "Adding kotlinOptions jvmTarget to $f"
+              sed -i "/android {/a \    android { kotlinOptions { jvmTarget = '17' } }" "$f" || true
             fi
           done
 
