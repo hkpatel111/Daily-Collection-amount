@@ -53,30 +53,24 @@ jobs:
         run: |
           flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Namespace fix for subprojects (Telephony fix)
-        working-directory: /tmp/build
-        run: |
-          if [ -f android/build.gradle ]; then
-            cat >> android/build.gradle << 'EOF'
-          subprojects {
-              afterEvaluate { project ->
-                  if (project.hasProperty('android')) {
-                      project.android {
-                          if (namespace == null) {
-                              namespace = 'com.dailyhisab.daily_collection_app'
-                          }
-                      }
-                  }
-              }
-          }
-          EOF
-          fi
-
       - name: Flutter clean + pub get
         working-directory: /tmp/build
         run: |
           flutter clean
           flutter pub get
+
+      - name: Fix missing namespaces in pub plugins (Telephony fix)
+        run: |
+          find /home/runner/.pub-cache -name "AndroidManifest.xml" | while read manifest; do
+            if grep -q "package=" "$manifest"; then
+              pkg=$(grep -o 'package="[^"]*"' "$manifest" | head -1 | cut -d'"' -f2)
+              gradle_file=$(dirname "$manifest")/../build.gradle
+              if [ -f "$gradle_file" ] && ! grep -q "namespace" "$gradle_file"; then
+                echo "Adding namespace $pkg to $gradle_file"
+                sed -i "/android {/a \    namespace '$pkg'" "$gradle_file"
+              fi
+            fi
+          done
 
       - name: Build release APK
         working-directory: /tmp/build
