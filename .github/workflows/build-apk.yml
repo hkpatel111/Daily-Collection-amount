@@ -53,52 +53,29 @@ jobs:
         run: |
           flutter create --org com.dailyhisab --project-name daily_collection_app .
 
+      - name: Force Global Kotlin JVM Target 17 & Telephony Namespace Fix
+        working-directory: /tmp/build
+        run: |
+          # 1. Force global Kotlin JVM target in gradle.properties to fix 1.8 vs 11/17 mismatch
+          if [ -f android/gradle.properties ]; then
+            echo "kotlin.compiler.jvmTarget=17" >> android/gradle.properties
+          else
+            echo "kotlin.compiler.jvmTarget=17" > android/gradle.properties
+          fi
+
+          # 2. Telephony plugin namespace fix inside pub-cache
+          for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
+            if ! grep -q "namespace" "$f"; then
+              echo "Injecting namespace into $f"
+              sed -i "/android {/a \    namespace 'com.unact.telephony'" "$f"
+            fi
+          done
+
       - name: Flutter clean + pub get
         working-directory: /tmp/build
         run: |
           flutter clean
           flutter pub get
-
-      - name: Ultimate Telephony Fix (Namespace & Kotlin JVM Target 17)
-        run: |
-          # Telephony plugin ke andar exact jaakar namespace aur jvmTarget 17 forcefully inject karna
-          for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
-            echo "Patching telephony build.gradle at $f"
-            
-            # 1. Add namespace if missing
-            if ! grep -q "namespace" "$f"; then
-              sed -i "/android {/a \    namespace 'com.unact.telephony'" "$f"
-            fi
-            
-            # 2. Add kotlinOptions jvmTarget = '17' inside android block
-            if ! grep -q "jvmTarget" "$f"; then
-              sed -i "/android {/a \    kotlinOptions { jvmTarget = '17' }" "$f"
-            fi
-          done
-
-          # 3. Global subprojects fallback for safety across all plugins
-          BUILD_GRADLE="/tmp/build/android/build.gradle"
-          if [ -f "$BUILD_GRADLE" ]; then
-            cat >> "$BUILD_GRADLE" << 'EOF'
-
-          subprojects {
-              afterEvaluate { project ->
-                  if (project.hasProperty('android')) {
-                      project.android {
-                          if (namespace == null) {
-                              namespace = project.group
-                          }
-                      }
-                  }
-              }
-              tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-                  kotlinOptions {
-                      jvmTarget = '17'
-                  }
-              }
-          }
-          EOF
-          fi
 
       - name: Build release APK
         working-directory: /tmp/build
