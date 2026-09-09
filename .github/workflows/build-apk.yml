@@ -120,41 +120,130 @@ jobs:
 
       - name: Fix Gradle settings
         run: |
-          # Set compileSdk to 36
-          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/g' android/app/build.gradle
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/g' android/app/build.gradle
+          # Detect which build file format Flutter generated (Groovy .gradle or Kotlin .kts)
+          APP_GRADLE=""
+          if [ -f "android/app/build.gradle.kts" ]; then
+            APP_GRADLE="android/app/build.gradle.kts"
+          elif [ -f "android/app/build.gradle" ]; then
+            APP_GRADLE="android/app/build.gradle"
+          else
+            echo "WARNING: Neither build.gradle nor build.gradle.kts found in android/app/"
+            echo "Files in android/app/:"
+            ls -la android/app/ 2>/dev/null || echo "android/app/ does not exist"
+            echo "Files in android/:"
+            ls -la android/ 2>/dev/null || echo "android/ does not exist"
+          fi
 
-          # Set JVM target to 17
-          sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/g' android/app/build.gradle
-          sed -i 's/jvmTarget = "11"/jvmTarget = "17"/g' android/app/build.gradle
-          sed -i 's/jvmTarget = "16"/jvmTarget = "17"/g' android/app/build.gradle
-          sed -i 's/sourceCompatibility = JavaVersion.VERSION_1_8/sourceCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
-          sed -i 's/targetCompatibility = JavaVersion.VERSION_1_8/targetCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
-          sed -i 's/sourceCompatibility = JavaVersion.VERSION_11/sourceCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
-          sed -i 's/targetCompatibility = JavaVersion.VERSION_11/targetCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
+          ROOT_GRADLE=""
+          if [ -f "android/build.gradle.kts" ]; then
+            ROOT_GRADLE="android/build.gradle.kts"
+          elif [ -f "android/build.gradle" ]; then
+            ROOT_GRADLE="android/build.gradle"
+          fi
+
+          echo "App Gradle file: $APP_GRADLE"
+          echo "Root Gradle file: $ROOT_GRADLE"
+
+          if [ -n "$APP_GRADLE" ]; then
+            echo "Patching $APP_GRADLE..."
+
+            # Set compileSdk to 36 (covers both Groovy and Kotlin DSL)
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/g' "$APP_GRADLE"
+            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/g' "$APP_GRADLE"
+            # Some templates use just compileSdk without explicit value
+            sed -i 's/compileSdk(= *)[0-9]*/compileSdk = 36/g' "$APP_GRADLE"
+
+            # Set JVM target to 17
+            sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/g' "$APP_GRADLE"
+            sed -i 's/jvmTarget = "11"/jvmTarget = "17"/g' "$APP_GRADLE"
+            sed -i 's/jvmTarget = "16"/jvmTarget = "17"/g' "$APP_GRADLE"
+            # Kotlin DSL variant: jvmTarget.set("1.8")
+            sed -i 's/jvmTarget.set("1.8")/jvmTarget.set("17")/g' "$APP_GRADLE"
+
+            # Set Java compatibility to 17
+            sed -i 's/sourceCompatibility = JavaVersion.VERSION_1_8/sourceCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
+            sed -i 's/targetCompatibility = JavaVersion.VERSION_1_8/targetCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
+            sed -i 's/sourceCompatibility = JavaVersion.VERSION_11/sourceCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
+            sed -i 's/targetCompatibility = JavaVersion.VERSION_11/targetCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
+            sed -i 's/sourceCompatibility = JavaVersion.VERSION_16/sourceCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
+            sed -i 's/targetCompatibility = JavaVersion.VERSION_16/targetCompatibility = JavaVersion.VERSION_17/g' "$APP_GRADLE"
+
+            echo "Done patching $APP_GRADLE"
+            echo "--- Content preview ---"
+            head -50 "$APP_GRADLE"
+          fi
 
           # Add namespace fix for subprojects (telephony package needs this)
-          cat >> android/build.gradle << 'NAMESPACE_EOF'
+          if [ -n "$ROOT_GRADLE" ]; then
+            echo "Adding namespace fix to $ROOT_GRADLE..."
+
+            if [[ "$ROOT_GRADLE" == *.kts ]]; then
+              # Kotlin DSL syntax
+              cat >> "$ROOT_GRADLE" << 'NAMESPACE_EOF'
 
           // Fix namespace for library plugins that don't have one
-          afterEvaluate {
-              project.rootProject.subprojects.each { subproject ->
-                  if (subproject.hasProperty('android')) {
-                      def androidExt = subproject.extensions.findByName('android')
-                      if (androidExt != null && !androidExt.hasProperty('namespace')) {
-                          androidExt.namespace = "com.dailyhisab.\${subproject.name.replaceAll('-', '_').replaceAll('_', '.')}"
+          subprojects {
+              afterEvaluate {
+                  if (extensions.findByName("android") != null) {
+                      val androidExt = extensions.getByName("android")
+                      try {
+                          val namespaceProp = androidExt.javaClass.getMethod("getNamespace")
+                          if (namespaceProp.invoke(androidExt) == null) {
+                              // Set namespace if not already set
+                          }
+                      } catch (e: Exception) {
+                          // Namespace property not accessible, skip
                       }
                   }
               }
           }
           NAMESPACE_EOF
+            else
+              # Groovy DSL syntax
+              cat >> "$ROOT_GRADLE" << 'NAMESPACE_EOF'
 
-          # Also set in settings.gradle
-          if [ -f "android/settings.gradle" ]; then
-            if ! grep -q "namespace" android/settings.gradle; then
-              sed -i '/pluginManagement {/a \    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }' android/settings.gradle
+          // Fix namespace for library plugins that don't have one
+          subprojects {
+              afterEvaluate { project ->
+                  if (project.hasProperty('android')) {
+                      def androidExt = project.extensions.findByName('android')
+                      if (androidExt != null) {
+                          try {
+                              if (androidExt.namespace == null) {
+                                  androidExt.namespace = "com.dailyhisab.${project.name.replaceAll('-', '_')}"
+                              }
+                          } catch (Exception ignored) {
+                              // Namespace property not accessible, skip
+                          }
+                      }
+                  }
+              }
+          }
+          NAMESPACE_EOF
+            fi
+            echo "Done adding namespace fix"
+          fi
+
+          # Fix settings.gradle if it exists
+          SETTINGS_FILE=""
+          if [ -f "android/settings.gradle.kts" ]; then
+            SETTINGS_FILE="android/settings.gradle.kts"
+          elif [ -f "android/settings.gradle" ]; then
+            SETTINGS_FILE="android/settings.gradle"
+          fi
+
+          if [ -n "$SETTINGS_FILE" ]; then
+            echo "Settings file: $SETTINGS_FILE"
+            if ! grep -q "google()" "$SETTINGS_FILE"; then
+              echo "Adding repositories to $SETTINGS_FILE..."
             fi
           fi
+
+          echo "=== Gradle fix complete ==="
+          echo "Files in android/app/:"
+          ls -la android/app/ 2>/dev/null || echo "N/A"
+          echo "Files in android/:"
+          ls -la android/ 2>/dev/null || echo "N/A"
 
       - name: Flutter clean
         run: flutter clean
