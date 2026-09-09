@@ -53,10 +53,16 @@ jobs:
         run: |
           flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Fix Telephony Namespace & Global Kotlin JVM Target
+      - name: Flutter clean + pub get
         working-directory: /tmp/build
         run: |
-          # 1. Namespace fix for telephony plugin
+          flutter clean
+          flutter pub get
+
+      - name: Fix Telephony Namespace & Force JVM Target to 17 (Post-PubGet Fix)
+        working-directory: /tmp/build
+        run: |
+          # 1. Namespace fix for telephony plugin inside pub-cache
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
             if ! grep -q "namespace" "$f"; then
               echo "Injecting namespace into $f"
@@ -64,7 +70,7 @@ jobs:
             fi
           done
 
-          # 2. Add global subprojects fix for Kotlin JVM target & namespace in android/build.gradle
+          # 2. Append subprojects rule at the very end of android/build.gradle so it overrides everything safely
           if [ -f android/build.gradle ]; then
             cat >> android/build.gradle << 'EOF'
 
@@ -77,21 +83,15 @@ jobs:
                           }
                       }
                   }
-                  project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-                      kotlinOptions {
-                          jvmTarget = '17'
-                      }
+              }
+              tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                  kotlinOptions {
+                      jvmTarget = '17'
                   }
               }
           }
           EOF
           fi
-
-      - name: Flutter clean + pub get
-        working-directory: /tmp/build
-        run: |
-          flutter clean
-          flutter pub get
 
       - name: Build release APK
         working-directory: /tmp/build
