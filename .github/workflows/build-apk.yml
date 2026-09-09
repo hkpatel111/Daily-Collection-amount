@@ -1,7 +1,9 @@
-name: Build APK from ZIP
+name: Build Daily Collection APK v8
 
 on:
   push:
+    branches: [ main ]
+  pull_request:
     branches: [ main ]
   workflow_dispatch:
 
@@ -13,7 +15,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
@@ -22,64 +24,77 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
-          cache: true
+          channel: 'stable'
+
+      - name: Flutter version
+        run: flutter --version
 
       - name: Find and extract ZIP
         run: |
-          ls -la
-          ZIP_FILE=$(find . -name "*.zip" -not -path "./.git/*" | head -1)
+          ZIP_FILE=$(find . -name "daily_collection_app_v*.zip" -type f | head -1)
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: No ZIP file found!"
-            exit 1
-          fi
-          echo "Found ZIP: $ZIP_FILE"
-          unzip -o "$ZIP_FILE" -d extracted/
-
-      - name: Find project root
-        id: findroot
-        run: |
-          PROJECT_ROOT=$(find extracted/ -name "pubspec.yaml" -not -path "*/.git/*" | head -1 | xargs dirname)
-          if [ -z "$PROJECT_ROOT" ]; then
-            if [ -f "extracted/pubspec.yaml" ]; then
-              PROJECT_ROOT="extracted"
+            echo "No ZIP file found! Checking for lib/ directory..."
+            if [ -d "lib" ]; then
+              echo "Using existing lib/ directory"
             else
-              echo "ERROR: Cannot find pubspec.yaml!"
-              find extracted/ -type f
+              echo "ERROR: No ZIP file or lib/ directory found!"
               exit 1
             fi
+          else
+            echo "Found ZIP: $ZIP_FILE"
+            unzip -o "$ZIP_FILE" -d .
           fi
-          echo "project_root=$PROJECT_ROOT" >> $GITHUB_OUTPUT
 
-      - name: Copy files to workspace
+      - name: Find project directory
+        id: find_dir
         run: |
-          PROJECT_ROOT="${{ steps.findroot.outputs.project_root }}"
-          cp -r "$PROJECT_ROOT"/* . 2>/dev/null || true
-          cp -r "$PROJECT_ROOT"/.github . 2>/dev/null || true
-          cp -r "$PROJECT_ROOT"/.gitignore . 2>/dev/null || true
-          if [ ! -f "pubspec.yaml" ] && [ -d "$PROJECT_ROOT" ]; then
-            cp -r "$PROJECT_ROOT"/. .
+          if [ -d "daily_collection_app" ]; then
+            echo "project_dir=daily_collection_app" >> $GITHUB_OUTPUT
+          else
+            echo "project_dir=." >> $GITHUB_OUTPUT
           fi
 
-      - name: Create missing directories
-        run: mkdir -p lib/models lib/database/dao lib/services lib/screens lib/widgets lib/utils android/app/src/main
+      - name: Copy project files to root
+        run: |
+          PROJECT_DIR=${{ steps.find_dir.outputs.project_dir }}
+          if [ "$PROJECT_DIR" != "." ]; then
+            cp -r $PROJECT_DIR/lib .
+            cp $PROJECT_DIR/pubspec.yaml .
+            if [ -d "$PROJECT_DIR/android" ]; then
+              cp -r $PROJECT_DIR/android .
+            fi
+            if [ -f "$PROJECT_DIR/.gitignore" ]; then
+              cp $PROJECT_DIR/.gitignore .
+            fi
+            if [ -f "$PROJECT_DIR/README.md" ]; then
+              cp $PROJECT_DIR/README.md .
+            fi
+          fi
+          echo "Files in root:"
+          ls -la
 
-      - name: Generate Flutter scaffolding
+      - name: Flutter create scaffolding
         run: flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Write AndroidManifest.xml with SMS permissions
+      - name: Write AndroidManifest.xml
         run: |
-          cat > android/app/src/main/AndroidManifest.xml << 'MANIFEST'
+          cat > android/app/src/main/AndroidManifest.xml << 'MANIFEST_EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.SEND_SMS" />
-              <uses-permission android:name="android.permission.READ_SMS" />
-              <uses-permission android:name="android.permission.RECEIVE_SMS" />
-              <uses-permission android:name="android.permission.USE_FINGERPRINT" />
-              <uses-permission android:name="android.permission.READ_CONTACTS" />
+              <uses-permission android:name="android.permission.SEND_SMS"/>
+              <uses-permission android:name="android.permission.READ_SMS"/>
+              <uses-permission android:name="android.permission.RECEIVE_SMS"/>
+              <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
+              <uses-permission android:name="android.permission.READ_CONTACTS"/>
+              <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
               <application
                   android:label="Daily Collection"
-                  android:name="${applicationName}"
-                  android:icon="@mipmap/ic_launcher">
+                  android:icon="@mipmap/ic_launcher"
+                  android:requestLegacyExternalStorage="true">
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
@@ -90,7 +105,7 @@ jobs:
                       android:windowSoftInputMode="adjustResize">
                       <meta-data
                         android:name="io.flutter.embedding.android.NormalTheme"
-                        android:resource="@style/NormalTheme" />
+                        android:resource="@style/NormalTheme"/>
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.LAUNCHER"/>
@@ -98,107 +113,85 @@ jobs:
                   </activity>
                   <meta-data
                       android:name="flutterEmbedding"
-                      android:value="2" />
+                      android:value="2"/>
               </application>
-              <queries>
-                  <intent>
-                      <action android:name="android.intent.action.PROCESS_TEXT"/>
-                      <data android:mimeType="text/plain"/>
-                  </intent>
-              </queries>
           </manifest>
-          MANIFEST
+          MANIFEST_EOF
 
-      - name: Fix all Gradle compatibility issues
+      - name: Fix Gradle settings
         run: |
-          # Fix compileSdk in app build file
-          if [ -f "android/app/build.gradle" ]; then
-            sed -i 's/compileSdk 34/compileSdk 36/g' android/app/build.gradle
-            sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' android/app/build.gradle
-          elif [ -f "android/app/build.gradle.kts" ]; then
-            sed -i 's/compileSdk = 34/compileSdk = 36/g' android/app/build.gradle.kts
-            sed -i 's/compileSdkVersion = 34/compileSdkVersion = 36/g' android/app/build.gradle.kts
-          fi
+          # Set compileSdk to 36
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/g' android/app/build.gradle
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/g' android/app/build.gradle
 
-          # Add namespace + JVM target + compileSdk fixes for all subprojects
-          cat >> android/build.gradle << 'GRADLEFIX'
+          # Set JVM target to 17
+          sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/g' android/app/build.gradle
+          sed -i 's/jvmTarget = "11"/jvmTarget = "17"/g' android/app/build.gradle
+          sed -i 's/jvmTarget = "16"/jvmTarget = "17"/g' android/app/build.gradle
+          sed -i 's/sourceCompatibility = JavaVersion.VERSION_1_8/sourceCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
+          sed -i 's/targetCompatibility = JavaVersion.VERSION_1_8/targetCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
+          sed -i 's/sourceCompatibility = JavaVersion.VERSION_11/sourceCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
+          sed -i 's/targetCompatibility = JavaVersion.VERSION_11/targetCompatibility = JavaVersion.VERSION_17/g' android/app/build.gradle
 
-          subprojects {
-              afterEvaluate { project ->
-                  if (project.plugins.hasPlugin("com.android.library")) {
-                      project.android {
-                          if (!android.namespace) {
-                              def namespace = project.group.toString()
-                              if (namespace) {
-                                  android.namespace = namespace
-                              }
-                          }
-                          if (android.compileSdk == null || android.compileSdk < 36) {
-                              android.compileSdk = 36
-                          }
-                      }
-                  }
-                  if (project.hasProperty("android")) {
-                      project.android {
-                          compileOptions {
-                              sourceCompatibility JavaVersion.VERSION_17
-                              targetCompatibility JavaVersion.VERSION_17
-                          }
-                      }
-                  }
-                  project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-                      kotlinOptions {
-                          jvmTarget = "17"
+          # Add namespace fix for subprojects (telephony package needs this)
+          cat >> android/build.gradle << 'NAMESPACE_EOF'
+
+          // Fix namespace for library plugins that don't have one
+          afterEvaluate {
+              project.rootProject.subprojects.each { subproject ->
+                  if (subproject.hasProperty('android')) {
+                      def androidExt = subproject.extensions.findByName('android')
+                      if (androidExt != null && !androidExt.hasProperty('namespace')) {
+                          androidExt.namespace = "com.dailyhisab.\${subproject.name.replaceAll('-', '_').replaceAll('_', '.')}"
                       }
                   }
               }
           }
-          GRADLEFIX
+          NAMESPACE_EOF
 
-      - name: Verify project structure
-        run: |
-          echo "=== lib/ structure ==="
-          find lib/ -type f | sort
-          echo "=== Checking for duplicate imports ==="
-          grep -rn "import 'calculators_screen.dart'" lib/screens/dashboard_screen.dart | wc -l
-          echo "=== Checking CardThemeData ==="
-          grep -rn "cardTheme" lib/app.dart
-          echo "=== Checking requestSmsPermissions ==="
-          grep -n "requestSms" lib/services/sms_service.dart
-          echo "=== Checking contact_picker removed ==="
-          grep -rn "contact_picker" lib/ pubspec.yaml || echo "None found - good!"
+          # Also set in settings.gradle
+          if [ -f "android/settings.gradle" ]; then
+            if ! grep -q "namespace" android/settings.gradle; then
+              sed -i '/pluginManagement {/a \    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }' android/settings.gradle
+            fi
+          fi
 
-      - name: Clean and get dependencies
-        run: |
-          flutter clean
-          flutter pub get
+      - name: Flutter clean
+        run: flutter clean
 
-      - name: Build APK (verbose, capture output)
-        run: flutter build apk --release -v 2>&1 | tee /tmp/build_output.txt
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build APK
         continue-on-error: true
+        run: flutter build apk --release -v
 
-      - name: Search for APK everywhere
-        id: findapk
+      - name: Find APK
+        id: find_apk
         run: |
-          echo "=== Searching for APK ==="
-          find / -name "*.apk" 2>/dev/null | grep -v "platforms" | head -20
-          APK_FILE=$(find / -name "*.apk" 2>/dev/null | grep -v "platforms" | head -1)
-          echo "Found APK: $APK_FILE"
-          echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
-          echo "=== Last 30 lines of build output ==="
-          tail -30 /tmp/build_output.txt
+          APK_PATH=$(find / -name "*.apk" -path "*/release/*" 2>/dev/null | head -1)
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find / -name "*.apk" 2>/dev/null | head -1)
+          fi
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "Found APK: $APK_PATH"
 
-      - name: Upload APK (if found)
-        if: steps.findapk.outputs.apk_path != ''
+      - name: Upload APK artifact
+        if: steps.find_apk.outputs.apk_path != ''
         uses: actions/upload-artifact@v4
         with:
           name: daily-collection-apk
-          path: ${{ steps.findapk.outputs.apk_path }}
+          path: ${{ steps.find_apk.outputs.apk_path }}
 
       - name: Upload build output (for debugging)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-output
-          path: /tmp/build_output.txt
-          
+          path: |
+            build/
+            android/
+            pubspec.yaml
+            .flutter-plugins
+            .flutter-plugins-dependencies
+            
