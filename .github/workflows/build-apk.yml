@@ -63,15 +63,16 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Ultimate Master Fix + Disable AAR Metadata Checks
+      - name: Ultimate Master Fix + Disable Metadata Check Flag
         working-directory: /tmp/build
         run: |
-          # 1. Force SDK 36 universally via properties
+          # 1. Force SDK 36 and COMPLETELY DISABLE AAR Metadata checks via gradle properties
           echo "flutter.compileSdkVersion=36" >> android/local.properties
           echo "flutter.targetSdkVersion=36" >> android/local.properties
           echo "android.compileSdkVersion=36" >> android/gradle.properties
           echo "android.targetSdkVersion=36" >> android/gradle.properties
           echo "android.overrideVersionCheck=true" >> android/gradle.properties
+          echo "android.injected.checkAarMetadata=false" >> android/gradle.properties
 
           # 2. Force compileSdk/targetSdk to 36 directly inside main app build.gradle
           BUILD_GRADLE="android/app/build.gradle"
@@ -106,7 +107,7 @@ jobs:
             fi
           done
 
-          # 5. Force compileSdk 36, Java 11, Kotlin 11, and COMPLETELY DISABLE AAR Metadata validation across all subprojects
+          # 5. Force compileSdk 36, Java 11, and Kotlin 11 across all subprojects
           if [ -f android/build.gradle ]; then
             cat >> android/build.gradle << 'EOF'
 
@@ -136,10 +137,6 @@ jobs:
                               targetCompatibility JavaVersion.VERSION_11
                           }
                       }
-                  }
-                  // Disable annoying AAR metadata version checks globally
-                  project.tasks.matching { it.name.toLowerCase().contains('aarmetadata') }.configureEach {
-                      enabled = false
                   }
               }
               tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
