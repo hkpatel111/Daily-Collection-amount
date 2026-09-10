@@ -57,22 +57,33 @@ jobs:
         run: |
           flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Flutter clean + pub get
+      - name: Comprehensive All-in-One Master Fix
         working-directory: /tmp/build
         run: |
-          flutter clean
-          flutter pub get
+          # 1. Force SDK 36 universally via local.properties and gradle.properties
+          echo "flutter.compileSdkVersion=36" >> android/local.properties
+          echo "flutter.targetSdkVersion=36" >> android/local.properties
+          echo "android.compileSdkVersion=36" >> android/gradle.properties
+          echo "android.targetSdkVersion=36" >> android/gradle.properties
 
-      - name: Ultimate Force Override (SDK 36, Telephony & Java 11)
-        working-directory: /tmp/build
-        run: |
-          # 1. Remove obsolete package attribute from telephony AndroidManifest.xml
+          # 2. Force compileSdk/targetSdk to 36 directly inside android/app/build.gradle and replace flutter variables
+          BUILD_GRADLE="android/app/build.gradle"
+          if [ -f "$BUILD_GRADLE" ]; then
+            sed -i 's/compileSdkVersion.*/compileSdkVersion 36/g' "$BUILD_GRADLE"
+            sed -i 's/compileSdk\s*=.*/compileSdk = 36/g' "$BUILD_GRADLE"
+            sed -i 's/targetSdkVersion.*/targetSdkVersion 36/g' "$BUILD_GRADLE"
+            sed -i 's/targetSdk\s*=.*/targetSdk = 36/g' "$BUILD_GRADLE"
+            sed -i 's/flutter\.compileSdkVersion/36/g' "$BUILD_GRADLE"
+            sed -i 's/flutter\.targetSdkVersion/36/g' "$BUILD_GRADLE"
+          fi
+
+          # 3. Remove obsolete package attribute from telephony AndroidManifest.xml
           for m in $(find /home/runner/.pub-cache -path "*/telephony-*/android/src/main/AndroidManifest.xml"); do
             sed -i 's/package="[^"]*"//g' "$m"
             sed -i "s/package='[^']*'//g" "$m"
           done
 
-          # 2. Patch telephony build.gradle for namespace and jvmTarget = '11'
+          # 4. Patch telephony build.gradle for namespace and jvmTarget = '11'
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
             if ! grep -q "namespace" "$f"; then
               sed -i "/android {/a \    namespace 'com.shounakmulay.telephony'" "$f"
@@ -84,18 +95,7 @@ jobs:
             fi
           done
 
-          # 3. FORCE compileSdk and targetSdk to 36 directly in build.gradle
-          for f in android/app/build.gradle android/app/build.gradle.kts; do
-            if [ -f "$f" ]; then
-              echo "Forcing SDK 36 in $f"
-              sed -i 's/compileSdkVersion.*/compileSdkVersion 36/g' "$f"
-              sed -i 's/compileSdk\s*=.*/compileSdk = 36/g' "$f"
-              sed -i 's/targetSdkVersion.*/targetSdkVersion 36/g' "$f"
-              sed -i 's/targetSdk\s*=.*/targetSdk = 36/g' "$f"
-            fi
-          done
-
-          # 4. Force Java 11 and Kotlin 11 across all subprojects
+          # 5. Force Java 11 and Kotlin 11 across all subprojects
           if [ -f android/build.gradle ]; then
             cat >> android/build.gradle << 'EOF'
 
@@ -121,6 +121,12 @@ jobs:
           }
           EOF
           fi
+
+      - name: Flutter clean + pub get
+        working-directory: /tmp/build
+        run: |
+          flutter clean
+          flutter pub get
 
       - name: Build release APK
         working-directory: /tmp/build
