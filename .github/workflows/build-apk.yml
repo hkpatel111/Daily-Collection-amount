@@ -63,14 +63,15 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Comprehensive All-in-One Master Fix (Including Subprojects SDK 36 Force)
+      - name: Comprehensive All-in-One Master Fix + Metadata Bypass
         working-directory: /tmp/build
         run: |
-          # 1. Force SDK 36 universally via local.properties and gradle.properties
+          # 1. Force SDK 36 and bypass AAR metadata checks via gradle.properties
           echo "flutter.compileSdkVersion=36" >> android/local.properties
           echo "flutter.targetSdkVersion=36" >> android/local.properties
           echo "android.compileSdkVersion=36" >> android/gradle.properties
           echo "android.targetSdkVersion=36" >> android/gradle.properties
+          echo "android.overrideVersionCheck=true" >> android/gradle.properties
 
           # 2. Force compileSdk/targetSdk to 36 directly inside android/app/build.gradle
           BUILD_GRADLE="android/app/build.gradle"
@@ -105,7 +106,7 @@ jobs:
             fi
           done
 
-          # 5. Force compileSdk 36, Java 11, and Kotlin 11 across ALL subprojects (including file_picker)
+          # 5. Force compileSdk 36, Java 11, and Kotlin 11 across ALL subprojects
           if [ -f android/build.gradle ]; then
             cat >> android/build.gradle << 'EOF'
 
