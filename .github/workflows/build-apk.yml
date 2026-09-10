@@ -57,7 +57,13 @@ jobs:
         run: |
           flutter create --org com.dailyhisab --project-name daily_collection_app .
 
-      - name: Comprehensive All-in-One Master Fix
+      - name: Flutter clean + pub get (Run First)
+        working-directory: /tmp/build
+        run: |
+          flutter clean
+          flutter pub get
+
+      - name: Comprehensive All-in-One Master Fix (Run After Pub Get)
         working-directory: /tmp/build
         run: |
           # 1. Force SDK 36 universally via local.properties and gradle.properties
@@ -66,7 +72,7 @@ jobs:
           echo "android.compileSdkVersion=36" >> android/gradle.properties
           echo "android.targetSdkVersion=36" >> android/gradle.properties
 
-          # 2. Force compileSdk/targetSdk to 36 directly inside android/app/build.gradle and replace flutter variables
+          # 2. Force compileSdk/targetSdk to 36 directly inside android/app/build.gradle
           BUILD_GRADLE="android/app/build.gradle"
           if [ -f "$BUILD_GRADLE" ]; then
             sed -i 's/compileSdkVersion.*/compileSdkVersion 36/g' "$BUILD_GRADLE"
@@ -75,6 +81,11 @@ jobs:
             sed -i 's/targetSdk\s*=.*/targetSdk = 36/g' "$BUILD_GRADLE"
             sed -i 's/flutter\.compileSdkVersion/36/g' "$BUILD_GRADLE"
             sed -i 's/flutter\.targetSdkVersion/36/g' "$BUILD_GRADLE"
+            
+            # Agar file mein compileSdk ki line nahi mili toh android block mein ghusa do
+            if ! grep -q "36" "$BUILD_GRADLE"; then
+              sed -i "/android {/a \    compileSdk 36\n    defaultConfig { targetSdk 36 }" "$BUILD_GRADLE"
+            fi
           fi
 
           # 3. Remove obsolete package attribute from telephony AndroidManifest.xml
@@ -121,12 +132,6 @@ jobs:
           }
           EOF
           fi
-
-      - name: Flutter clean + pub get
-        working-directory: /tmp/build
-        run: |
-          flutter clean
-          flutter pub get
 
       - name: Build release APK
         working-directory: /tmp/build
