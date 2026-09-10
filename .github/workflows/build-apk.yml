@@ -63,7 +63,7 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Ultimate Post-Create Fix (SDK 36, Telephony & Java 11)
+      - name: Ultimate Force Override (SDK 36, Telephony & Java 11)
         working-directory: /tmp/build
         run: |
           # 1. Remove obsolete package attribute from telephony AndroidManifest.xml
@@ -84,20 +84,16 @@ jobs:
             fi
           done
 
-          # 3. FORCE compileSdk and targetSdk to 36 AFTER flutter create & pub get
-          BUILD_GRADLE="android/app/build.gradle"
-          if [ -f "$BUILD_GRADLE" ]; then
-            echo "Forcing compileSdk 36 in $BUILD_GRADLE"
-            sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 36/g' "$BUILD_GRADLE"
-            sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 36/g' "$BUILD_GRADLE"
-            sed -i 's/compileSdk = [0-9]*/compileSdk = 36/g' "$BUILD_GRADLE"
-            sed -i 's/targetSdk = [0-9]*/targetSdk = 36/g' "$BUILD_GRADLE"
-            
-            # Agar compileSdk line na mile toh explicitly insert kar do
-            if ! grep -q "36" "$BUILD_GRADLE"; then
-              sed -i "/android {/a \    compileSdk 36\n    defaultConfig { targetSdk 36 }" "$BUILD_GRADLE"
+          # 3. FORCE compileSdk and targetSdk to 36 directly in build.gradle
+          for f in android/app/build.gradle android/app/build.gradle.kts; do
+            if [ -f "$f" ]; then
+              echo "Forcing SDK 36 in $f"
+              sed -i 's/compileSdkVersion.*/compileSdkVersion 36/g' "$f"
+              sed -i 's/compileSdk\s*=.*/compileSdk = 36/g' "$f"
+              sed -i 's/targetSdkVersion.*/targetSdkVersion 36/g' "$f"
+              sed -i 's/targetSdk\s*=.*/targetSdk = 36/g' "$f"
             fi
-          fi
+          done
 
           # 4. Force Java 11 and Kotlin 11 across all subprojects
           if [ -f android/build.gradle ]; then
