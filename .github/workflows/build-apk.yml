@@ -1,169 +1,47 @@
-name: Build Daily Collection APK
+Install Android SDK Platform 31 (revision 1)" ready.
+Installing Android SDK Platform 31 in /usr/local/lib/android/sdk/platforms/android-31
+"Install Android SDK Platform 31 (revision 1)" complete.
+"Install Android SDK Platform 31 (revision 1)" finished.
+[=========                              ] 25%                                   
+Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 7828 bytes (99.5% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
+Checking the license for package CMake 3.22.1 in /usr/local/lib/android/sdk/licenses
+License for package CMake 3.22.1 accepted.
+Preparing "Install CMake 3.22.1 v.3.22.1".
+"Install CMake 3.22.1 v.3.22.1" ready.
+Installing CMake 3.22.1 in /usr/local/lib/android/sdk/cmake/3.22.1
+"Install CMake 3.22.1 v.3.22.1" complete.
+"Install CMake 3.22.1 v.3.22.1" finished.
+Caught exception: Already watching path: /tmp/build/android
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+FAILURE: Build failed with an exception.
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
+* What went wrong:
+Execution failed for task ':file_picker:checkReleaseAarMetadata'.
+> A failure occurred while executing com.android.build.gradle.internal.tasks.CheckAarMetadataWorkAction
+   > An issue was found when checking AAR metadata:
 
-      - name: Set up Java 17 (Zulu for Gradle Runner)
-        uses: actions/setup-java@v5
-        with:
-          distribution: 'zulu'
-          java-version: '17'
+       1.  Dependency ':flutter_plugin_android_lifecycle' requires libraries and applications that
+           depend on it to compile against version 36 or later of the
+           Android APIs.
 
-      - name: Set up Flutter (stable)
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          cache: true
+           :file_picker is currently compiled against android-34.
 
-      - name: Install Android SDK 36 Platform
-        run: |
-          echo "y" | sudo /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" || true
+           Recommended action: Update this project to use a newer compileSdk
+           of at least 36, for example 36.
 
-      - name: Find and extract project ZIP
-        run: |
-          ZIP=$(ls -1 *.zip 2>/dev/null | sort -V | tail -n 1)
-          if [ -z "$ZIP" ]; then ZIP=$(find . -maxdepth 1 -name "*.zip" | head -n 1); fi
-          if [ -z "$ZIP" ]; then echo "No ZIP found in repo root!"; exit 1; fi
-          echo "Using: $ZIP"
-          rm -rf /tmp/project_src
-          mkdir -p /tmp/project_src
-          unzip -o "$ZIP" -d /tmp/project_src
+           Note that updating a library or application's compileSdk (which
+           allows newer APIs to be used) can be done separately from updating
+           targetSdk (which opts the app in to new runtime behavior) and
+           minSdk (which determines which devices the app can be installed
+           on).
 
-      - name: Copy project files correctly
-        run: |
-          mkdir -p /tmp/build
-          if [ -d "/tmp/project_src/daily_collection_app" ]; then
-            cp -r /tmp/project_src/daily_collection_app/. /tmp/build/
-          else
-            cp -r /tmp/project_src/. /tmp/build/
-          fi
-          ls -la /tmp/build
-          if [ ! -f "/tmp/build/pubspec.yaml" ]; then
-            echo "Error: pubspec.yaml not found in /tmp/build!"
-            exit 1
-          fi
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
 
-      - name: Create Flutter Android scaffolding (v2 embedding fix)
-        working-directory: /tmp/build
-        run: |
-          flutter create --org com.dailyhisab --project-name daily_collection_app .
-
-      - name: Flutter clean + pub get (Run First)
-        working-directory: /tmp/build
-        run: |
-          flutter clean
-          flutter pub get
-
-      - name: Ultimate Master Fix + Disable Metadata Check Flag
-        working-directory: /tmp/build
-        run: |
-          # 1. Force SDK 36 and COMPLETELY DISABLE AAR Metadata checks via gradle properties
-          echo "flutter.compileSdkVersion=36" >> android/local.properties
-          echo "flutter.targetSdkVersion=36" >> android/local.properties
-          echo "android.compileSdkVersion=36" >> android/gradle.properties
-          echo "android.targetSdkVersion=36" >> android/gradle.properties
-          echo "android.overrideVersionCheck=true" >> android/gradle.properties
-          echo "android.injected.checkAarMetadata=false" >> android/gradle.properties
-
-          # 2. Force compileSdk/targetSdk to 36 directly inside main app build.gradle
-          BUILD_GRADLE="android/app/build.gradle"
-          if [ -f "$BUILD_GRADLE" ]; then
-            sed -i 's/compileSdkVersion.*/compileSdkVersion 36/g' "$BUILD_GRADLE"
-            sed -i 's/compileSdk\s*=.*/compileSdk = 36/g' "$BUILD_GRADLE"
-            sed -i 's/targetSdkVersion.*/targetSdkVersion 36/g' "$BUILD_GRADLE"
-            sed -i 's/targetSdk\s*=.*/targetSdk = 36/g' "$BUILD_GRADLE"
-            sed -i 's/flutter\.compileSdkVersion/36/g' "$BUILD_GRADLE"
-            sed -i 's/flutter\.targetSdkVersion/36/g' "$BUILD_GRADLE"
-            
-            if ! grep -q "36" "$BUILD_GRADLE"; then
-              sed -i "/android {/a \    compileSdk 36\n    defaultConfig { targetSdk 36 }" "$BUILD_GRADLE"
-            fi
-          fi
-
-          # 3. Remove obsolete package attribute from telephony AndroidManifest.xml
-          for m in $(find /home/runner/.pub-cache -path "*/telephony-*/android/src/main/AndroidManifest.xml"); do
-            sed -i 's/package="[^"]*"//g' "$m"
-            sed -i "s/package='[^']*'//g" "$m"
-          done
-
-          # 4. Patch telephony build.gradle for namespace and jvmTarget = '11'
-          for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
-            if ! grep -q "namespace" "$f"; then
-              sed -i "/android {/a \    namespace 'com.shounakmulay.telephony'" "$f"
-            fi
-            if grep -q "jvmTarget" "$f"; then
-              sed -i "s/jvmTarget.*=.*['\"].*['\"]/jvmTarget = '11'/g" "$f"
-            else
-              sed -i "/android {/a \    kotlinOptions { jvmTarget = '11' }" "$f"
-            fi
-          done
-
-          # 5. Force compileSdk 36, Java 11, and Kotlin 11 across all subprojects
-          if [ -f android/build.gradle ]; then
-            cat >> android/build.gradle << 'EOF'
-
-          subprojects {
-              afterEvaluate { project ->
-                  if (project.hasProperty('android')) {
-                      project.android {
-                          if (namespace == null) {
-                              namespace = project.group
-                          }
-                          try {
-                              compileSdkVersion 36
-                          } catch (Exception e) {
-                              compileSdk = 36
-                          }
-                          try {
-                              defaultConfig {
-                                  targetSdkVersion 36
-                              }
-                          } catch (Exception e) {
-                              defaultConfig {
-                                  targetSdk = 36
-                              }
-                          }
-                          compileOptions {
-                              sourceCompatibility JavaVersion.VERSION_11
-                              targetCompatibility JavaVersion.VERSION_11
-                          }
-                      }
-                  }
-              }
-              tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-                  kotlinOptions {
-                      jvmTarget = '11'
-                  }
-              }
-          }
-          EOF
-          fi
-
-      - name: Build release APK
-        working-directory: /tmp/build
-        run: |
-          flutter build apk --release
-
-      - name: Find and Save APK
-        if: always()
-        run: |
-          APK=$(find /tmp/build -name "*.apk" 2>/dev/null | head -n 1)
-          echo "APK found: $APK"
-          mkdir -p /tmp/apk_out
-          if [ -n "$APK" ]; then cp "$APK" /tmp/apk_out/daily-collection.apk; fi
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: daily-collection-apk
-          path: /tmp/apk_out/
-          if-no-files-found: error
+BUILD FAILED in 4m 15s
+Running Gradle task 'assembleRelease'...                          256.4s
+Gradle task assembleRelease failed with exit code 1
+Error: Process completed with exit code 1
