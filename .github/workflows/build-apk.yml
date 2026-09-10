@@ -24,6 +24,10 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Install Android SDK 36 Platform
+        run: |
+          echo "y" | sudo /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" || true
+
       - name: Find and extract project ZIP
         run: |
           ZIP=$(ls -1 *.zip 2>/dev/null | sort -V | tail -n 1)
@@ -59,19 +63,17 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Final Bullets Fix (Telephony, Manifest, & Force compileSdk 36)
+      - name: Ultimate Post-Create Fix (SDK 36, Telephony & Java 11)
         working-directory: /tmp/build
         run: |
           # 1. Remove obsolete package attribute from telephony AndroidManifest.xml
           for m in $(find /home/runner/.pub-cache -path "*/telephony-*/android/src/main/AndroidManifest.xml"); do
-            echo "Removing package attribute from manifest at $m"
             sed -i 's/package="[^"]*"//g' "$m"
             sed -i "s/package='[^']*'//g" "$m"
           done
 
           # 2. Patch telephony build.gradle for namespace and jvmTarget = '11'
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
-            echo "Patching telephony build.gradle at $f"
             if ! grep -q "namespace" "$f"; then
               sed -i "/android {/a \    namespace 'com.shounakmulay.telephony'" "$f"
             fi
@@ -82,20 +84,18 @@ jobs:
             fi
           done
 
-          # 3. Force compileSdk and targetSdk to 36 dynamically in android/app/build.gradle AFTER flutter create
+          # 3. FORCE compileSdk and targetSdk to 36 AFTER flutter create & pub get
           BUILD_GRADLE="android/app/build.gradle"
           if [ -f "$BUILD_GRADLE" ]; then
-            echo "Forcing compileSdk and targetSdk to 36 in $BUILD_GRADLE"
+            echo "Forcing compileSdk 36 in $BUILD_GRADLE"
             sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 36/g' "$BUILD_GRADLE"
             sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 36/g' "$BUILD_GRADLE"
-            sed -i 's/compileSdk [0-9]*/compileSdk 36/g' "$BUILD_GRADLE"
-            sed -i 's/targetSdk [0-9]*/targetSdk 36/g' "$BUILD_GRADLE"
             sed -i 's/compileSdk = [0-9]*/compileSdk = 36/g' "$BUILD_GRADLE"
             sed -i 's/targetSdk = [0-9]*/targetSdk = 36/g' "$BUILD_GRADLE"
             
-            # Agar file mein compileSdk explicitly nahi mila toh android block ke andar insert kar do
-            if ! grep -q "compileSdk 36" "$BUILD_GRADLE" && ! grep -q "compileSdkVersion 36" "$BUILD_GRADLE"; then
-              sed -i "/android {/a \    compileSdkVersion 36\n    defaultConfig { targetSdkVersion 36 }" "$BUILD_GRADLE"
+            # Agar compileSdk line na mile toh explicitly insert kar do
+            if ! grep -q "36" "$BUILD_GRADLE"; then
+              sed -i "/android {/a \    compileSdk 36\n    defaultConfig { targetSdk 36 }" "$BUILD_GRADLE"
             fi
           fi
 
