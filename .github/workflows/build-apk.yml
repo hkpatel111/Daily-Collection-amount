@@ -63,7 +63,7 @@ jobs:
           flutter clean
           flutter pub get
 
-      - name: Comprehensive All-in-One Master Fix (Run After Pub Get)
+      - name: Comprehensive All-in-One Master Fix (Including Subprojects SDK 36 Force)
         working-directory: /tmp/build
         run: |
           # 1. Force SDK 36 universally via local.properties and gradle.properties
@@ -82,7 +82,6 @@ jobs:
             sed -i 's/flutter\.compileSdkVersion/36/g' "$BUILD_GRADLE"
             sed -i 's/flutter\.targetSdkVersion/36/g' "$BUILD_GRADLE"
             
-            # Agar file mein compileSdk ki line nahi mili toh android block mein ghusa do
             if ! grep -q "36" "$BUILD_GRADLE"; then
               sed -i "/android {/a \    compileSdk 36\n    defaultConfig { targetSdk 36 }" "$BUILD_GRADLE"
             fi
@@ -106,7 +105,7 @@ jobs:
             fi
           done
 
-          # 5. Force Java 11 and Kotlin 11 across all subprojects
+          # 5. Force compileSdk 36, Java 11, and Kotlin 11 across ALL subprojects (including file_picker)
           if [ -f android/build.gradle ]; then
             cat >> android/build.gradle << 'EOF'
 
@@ -116,6 +115,20 @@ jobs:
                       project.android {
                           if (namespace == null) {
                               namespace = project.group
+                          }
+                          try {
+                              compileSdkVersion 36
+                          } catch (Exception e) {
+                              compileSdk = 36
+                          }
+                          try {
+                              defaultConfig {
+                                  targetSdkVersion 36
+                              }
+                          } catch (Exception e) {
+                              defaultConfig {
+                                  targetSdk = 36
+                              }
                           }
                           compileOptions {
                               sourceCompatibility JavaVersion.VERSION_11
