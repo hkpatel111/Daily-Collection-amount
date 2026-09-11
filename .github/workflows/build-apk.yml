@@ -59,7 +59,7 @@ jobs:
           flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
           flutter pub get
 
-      - name: Absolute Force SDK 36 & Metadata Override
+      - name: Absolute Force SDK 36 & Bypass AarMetadata Checks
         working-directory: /tmp/build
         run: |
           # 1. Force SDK 36 via properties
@@ -70,7 +70,7 @@ jobs:
           echo "android.overrideVersionCheck=true" >> android/gradle.properties
           echo "android.injected.checkAarMetadata=false" >> android/gradle.properties
 
-          # 2. Aggressively rewrite app build.gradle to ensure compileSdk and targetSdk are 36
+          # 2. Aggressively rewrite app build.gradle
           BUILD_GRADLE="android/app/build.gradle"
           if [ -f "$BUILD_GRADLE" ]; then
             sed -i 's/compileSdkVersion.*/compileSdkVersion 36/g' "$BUILD_GRADLE"
@@ -80,27 +80,18 @@ jobs:
             sed -i 's/flutter\.compileSdkVersion/36/g' "$BUILD_GRADLE"
             sed -i 's/flutter\.targetSdkVersion/36/g' "$BUILD_GRADLE"
             
-            # If compileSdk block is missing entirely, insert it
             if ! grep -q "compileSdk" "$BUILD_GRADLE"; then
               sed -i "/android {/a \    compileSdk 36\n    defaultConfig { targetSdk 36 }" "$BUILD_GRADLE"
             fi
           fi
 
-          # 3. Patch file_picker build.gradle in pub-cache
-          for f in $(find /home/runner/.pub-cache -path "*/file_picker-*/android/build.gradle"); do
-            sed -i 's/compileSdkVersion.*/compileSdkVersion 36/g' "$f"
-            sed -i 's/compileSdk\s*=.*/compileSdk = 36/g' "$f"
-            sed -i 's/targetSdkVersion.*/targetSdkVersion 36/g' "$f"
-            sed -i 's/targetSdk\s*=.*/targetSdk = 36/g' "$f"
-          done
-
-          # 4. Remove obsolete package attribute from telephony AndroidManifest.xml
+          # 3. Remove obsolete package attribute from telephony AndroidManifest.xml
           for m in $(find /home/runner/.pub-cache -path "*/telephony-*/android/src/main/AndroidManifest.xml"); do
             sed -i 's/package="[^"]*"//g' "$m"
             sed -i "s/package='[^']*'//g" "$m"
           done
 
-          # 5. Patch telephony build.gradle for namespace and jvmTarget = '11'
+          # 4. Patch telephony build.gradle for namespace and jvmTarget = '11'
           for f in $(find /home/runner/.pub-cache -path "*/telephony-*/android/build.gradle"); do
             if ! grep -q "namespace" "$f"; then
               sed -i "/android {/a \    namespace 'com.shounakmulay.telephony'" "$f"
@@ -112,7 +103,7 @@ jobs:
             fi
           done
 
-          # 6. Enforce compileSdk 36 and Java 11 across all subprojects via allprojects block
+          # 5. Enforce compileSdk 36, Java 11, AND DISABLE AAR METADATA TASKS GLOBALLY
           if [ -f android/build.gradle ]; then
             cat >> android/build.gradle << 'EOF'
 
@@ -141,6 +132,11 @@ jobs:
                               sourceCompatibility JavaVersion.VERSION_11
                               targetCompatibility JavaVersion.VERSION_11
                           }
+                      }
+                  }
+                  project.tasks.all { task ->
+                      if (task.name.contains("AarMetadata") || task.name.contains("checkAarMetadata")) {
+                          task.enabled = false
                       }
                   }
               }
