@@ -52,19 +52,14 @@ jobs:
             exit 1
           fi
 
-      - name: Regenerate Clean Android V2 Scaffolding & Pub Get
+      - name: Regenerate Clean Android Scaffolding & Pub Get
         working-directory: /tmp/build
         run: |
-          # 1. Remove old/corrupted android folder to wipe out v1 embedding completely
           rm -rf android
-          
-          # 2. Re-create fresh Android folder with modern v2 embedding
           flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
-          
-          # 3. Get dependencies
           flutter pub get
 
-      - name: Force SDK 36 & Patch All Plugins
+      - name: Absolute Force SDK 36 & Metadata Override
         working-directory: /tmp/build
         run: |
           # 1. Force SDK 36 via properties
@@ -75,7 +70,7 @@ jobs:
           echo "android.overrideVersionCheck=true" >> android/gradle.properties
           echo "android.injected.checkAarMetadata=false" >> android/gradle.properties
 
-          # 2. Force compileSdk to 36 in app build.gradle
+          # 2. Aggressively rewrite app build.gradle to ensure compileSdk and targetSdk are 36
           BUILD_GRADLE="android/app/build.gradle"
           if [ -f "$BUILD_GRADLE" ]; then
             sed -i 's/compileSdkVersion.*/compileSdkVersion 36/g' "$BUILD_GRADLE"
@@ -85,7 +80,8 @@ jobs:
             sed -i 's/flutter\.compileSdkVersion/36/g' "$BUILD_GRADLE"
             sed -i 's/flutter\.targetSdkVersion/36/g' "$BUILD_GRADLE"
             
-            if ! grep -q "36" "$BUILD_GRADLE"; then
+            # If compileSdk block is missing entirely, insert it
+            if ! grep -q "compileSdk" "$BUILD_GRADLE"; then
               sed -i "/android {/a \    compileSdk 36\n    defaultConfig { targetSdk 36 }" "$BUILD_GRADLE"
             fi
           fi
@@ -116,7 +112,7 @@ jobs:
             fi
           done
 
-          # 6. Force all projects/subprojects to compileSdk 36 and Java 11
+          # 6. Enforce compileSdk 36 and Java 11 across all subprojects via allprojects block
           if [ -f android/build.gradle ]; then
             cat >> android/build.gradle << 'EOF'
 
