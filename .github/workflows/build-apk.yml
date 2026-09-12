@@ -56,8 +56,6 @@ jobs:
         run: |
           rm -rf android ios .dart_tool build
           flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
-          echo "=== flutter create done ==="
-          cat android/app/build.gradle.kts
 
       - name: Write AndroidManifest
         run: |
@@ -113,6 +111,36 @@ jobs:
           flutter clean || true
           flutter pub get
 
+      - name: Fix namespace for old plugins (telephony etc.)
+        run: |
+          echo "Patching old Android plugins missing namespace..."
+          # Patch any plugin build.gradle that has android { but no namespace
+          find "$HOME/.pub-cache" -path "*/android/build.gradle" -type f 2>/dev/null | while read -r f; do
+            if grep -q "android\s*{" "$f" && ! grep -q "namespace" "$f"; then
+              echo "Patching: $f"
+              # Insert namespace right after "android {"
+              # Use a generic namespace derived from folder name
+              PKG=$(echo "$f" | sed -n 's|.*/hosted/pub.dev/\([^/]*\)/.*|\1|p' | tr '.-' '_' | head -c 40)
+              if [ -z "$PKG" ]; then PKG="unknown_plugin"; fi
+              sed -i "s/android\s*{/android {\n    namespace \"com.dailyhisab.$PKG\"/" "$f"
+            fi
+          done
+          # Also patch build.gradle.kts plugins if any
+          find "$HOME/.pub-cache" -path "*/android/build.gradle.kts" -type f 2>/dev/null | while read -r f; do
+            if grep -q "android\s*{" "$f" && ! grep -q "namespace" "$f"; then
+              echo "Patching kts: $f"
+              PKG=$(echo "$f" | sed -n 's|.*/hosted/pub.dev/\([^/]*\)/.*|\1|p' | tr '.-' '_' | head -c 40)
+              if [ -z "$PKG" ]; then PKG="unknown_plugin"; fi
+              sed -i "s/android\s*{/android {\n    namespace = \"com.dailyhisab.$PKG\"/" "$f"
+            fi
+          done
+          echo "Namespace patch done"
+          # Verify telephony
+          find "$HOME/.pub-cache" -path "*telephony*/android/build.gradle" -type f 2>/dev/null | while read -r f; do
+            echo "=== $f ==="
+            head -30 "$f"
+          done
+
       - name: Analyze
         continue-on-error: true
         run: flutter analyze --no-fatal-infos 2>&1 | tee analyze.log || true
@@ -130,7 +158,7 @@ jobs:
           echo "=== LAST 40 LINES ==="
           tail -40 build.log || true
           echo "=== KEY ERRORS ==="
-          grep -E "What went wrong|error •|Error:|FAILURE|e: file|Script compilation" build.log | head -25 || true
+          grep -E "What went wrong|error •|Error:|FAILURE|e: file|Namespace" build.log | head -25 || true
           grep -E "error •" analyze.log | head -10 || true
 
       - name: Find APK
