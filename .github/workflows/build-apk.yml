@@ -26,41 +26,61 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Find and extract project ZIP
+      - name: Show workspace
         run: |
-          echo "Looking for ZIP files..."
+          echo "=== Workspace contents ==="
+          ls -la
           find . -name "*.zip" -type f || true
+
+      - name: Extract project ZIP
+        run: |
           ZIPFILE=$(find . -maxdepth 2 -name "daily_collection*.zip" -type f | head -1)
           if [ -z "$ZIPFILE" ]; then
             ZIPFILE=$(find . -maxdepth 2 -name "*.zip" -type f | head -1)
           fi
           if [ -n "$ZIPFILE" ]; then
             echo "Found ZIP: $ZIPFILE"
-            unzip -o "$ZIPFILE" -d extracted || true
-            # Move contents to root if nested
+            rm -rf extracted
+            mkdir -p extracted
+            unzip -o "$ZIPFILE" -d extracted
+            echo "=== Extracted structure ==="
+            find extracted -maxdepth 3 -type d
+            # Copy project files to root
             if [ -d extracted/daily_collection_app ]; then
-              cp -r extracted/daily_collection_app/* . || true
+              cp -a extracted/daily_collection_app/. .
             elif [ -d extracted/daily_collection_v8 ]; then
-              cp -r extracted/daily_collection_v8/* . || true
+              cp -a extracted/daily_collection_v8/. .
+            elif [ -f extracted/pubspec.yaml ]; then
+              cp -a extracted/. .
             else
-              cp -r extracted/* . || true
+              # nested one more level?
+              INNER=$(find extracted -name "pubspec.yaml" | head -1)
+              if [ -n "$INNER" ]; then
+                DIR=$(dirname "$INNER")
+                echo "Found pubspec in $DIR"
+                cp -a "$DIR"/. .
+              fi
             fi
           else
-            echo "No ZIP found - assuming source is already in repo"
+            echo "No ZIP found - assuming source already present"
           fi
+          echo "=== After extract ==="
           ls -la
+          test -f pubspec.yaml && echo "pubspec.yaml OK" || echo "ERROR: pubspec.yaml missing"
 
-      - name: Flutter create scaffolding (if needed)
+      - name: Flutter create scaffolding
         run: |
-          if [ ! -f "android/app/build.gradle" ] && [ ! -f "android/app/build.gradle.kts" ]; then
-            echo "Running flutter create for scaffolding..."
+          if [ ! -d android ]; then
+            echo "Creating Flutter scaffolding..."
             flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
+          else
+            echo "android/ folder already exists"
           fi
 
-      - name: Write AndroidManifest with permissions
+      - name: Write AndroidManifest
         run: |
           mkdir -p android/app/src/main
-          cat > android/app/src/main/AndroidManifest.xml << 'EOF'
+          cat > android/app/src/main/AndroidManifest.xml << 'MANIFEST'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.SEND_SMS"/>
               <uses-permission android:name="android.permission.READ_SMS"/>
@@ -71,8 +91,6 @@ jobs:
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
               <uses-permission android:name="android.permission.INTERNET"/>
               <application
                   android:label="Daily Collection"
@@ -95,30 +113,30 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER"/>
                       </intent-filter>
                   </activity>
-                  <meta-data
-                      android:name="flutterEmbedding"
-                      android:value="2" />
+                  <meta-data android:name="flutterEmbedding" android:value="2" />
               </application>
           </manifest>
-          EOF
+          MANIFEST
 
-      - name: Fix Gradle settings (compileSdk 36, JVM 17)
+      - name: Fix Gradle (compileSdk 36, JVM 17, namespace)
         run: |
-          # Fix android/app/build.gradle or .kts
           if [ -f android/app/build.gradle ]; then
-            sed -i 's/compileSdk = .*/compileSdk = 36/' android/app/build.gradle || true
-            sed -i 's/compileSdkVersion .*/compileSdk 36/' android/app/build.gradle || true
+            sed -i 's/compileSdk = [0-9]*/compileSdk = 36/' android/app/build.gradle || true
+            sed -i 's/compileSdkVersion [0-9]*/compileSdk 36/' android/app/build.gradle || true
             sed -i 's/sourceCompatibility JavaVersion.*/sourceCompatibility JavaVersion.VERSION_17/' android/app/build.gradle || true
             sed -i 's/targetCompatibility JavaVersion.*/targetCompatibility JavaVersion.VERSION_17/' android/app/build.gradle || true
+            sed -i 's/jvmTarget = .*/jvmTarget = "17"/' android/app/build.gradle || true
           fi
           if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/compileSdk = .*/compileSdk = 36/' android/app/build.gradle.kts || true
+            sed -i 's/compileSdk = [0-9]*/compileSdk = 36/' android/app/build.gradle.kts || true
             sed -i 's/sourceCompatibility = .*/sourceCompatibility = JavaVersion.VERSION_17/' android/app/build.gradle.kts || true
             sed -i 's/targetCompatibility = .*/targetCompatibility = JavaVersion.VERSION_17/' android/app/build.gradle.kts || true
+            sed -i 's/jvmTarget = .*/jvmTarget = "17"/' android/app/build.gradle.kts || true
           fi
-          # Namespace fix for subprojects
+          # Namespace fix for plugins
           if [ -f android/build.gradle ]; then
-            grep -q "afterEvaluate" android/build.gradle || cat >> android/build.gradle << 'GBEOF'
+            if ! grep -q "afterEvaluate" android/build.gradle; then
+              cat >> android/build.gradle << 'GBEOF'
 
           subprojects {
               afterEvaluate { project ->
@@ -130,26 +148,64 @@ jobs:
               }
           }
           GBEOF
+            fi
+          fi
+          if [ -f android/build.gradle.kts ]; then
+            if ! grep -q "afterEvaluate" android/build.gradle.kts; then
+              cat >> android/build.gradle.kts << 'GBEOF'
+
+          subprojects {
+              afterEvaluate {
+                  if (hasProperty("android")) {
+                      val android = extensions.findByName("android")
+                      if (android != null && android is com.android.build.gradle.BaseExtension) {
+                          if (android.namespace == null) {
+                              android.namespace = "com.dailyhisab." + name.replace("-", "_")
+                          }
+                      }
+                  }
+              }
+          }
+          GBEOF
+            fi
           fi
 
-      - name: Flutter clean & pub get
+      - name: Flutter pub get
         run: |
-          flutter clean
+          flutter clean || true
           flutter pub get
 
-      - name: Build APK (release)
+      - name: Analyze (show errors early)
+        continue-on-error: true
+        run: |
+          flutter analyze --no-fatal-infos 2>&1 | tee analyze.log || true
+          echo "=== Analyze done ==="
+
+      - name: Build APK
         id: build
         continue-on-error: true
         run: |
-          flutter build apk --release -v
+          set -o pipefail
+          flutter build apk --release -v 2>&1 | tee build.log
+          echo "BUILD_EXIT=${PIPESTATUS[0]}" >> $GITHUB_ENV
 
-      - name: Locate APK
+      - name: Show last 80 lines of build log
+        if: always()
         run: |
-          echo "Searching for APK..."
-          find . -name "*.apk" -type f 2>/dev/null || true
-          find /home/runner -name "*.apk" -type f 2>/dev/null | head -20 || true
+          echo "=== LAST 80 LINES OF BUILD LOG ==="
+          tail -80 build.log || true
+          echo "=== ANALYZE LOG (errors) ==="
+          grep -E "error •|Error:" analyze.log | head -30 || true
 
-      - name: Upload APK artifact
+      - name: Find APK
+        if: always()
+        run: |
+          echo "=== Searching for APK ==="
+          find . -name "*.apk" -type f 2>/dev/null || true
+          find /home/runner -name "app-release.apk" 2>/dev/null | head -10 || true
+
+      - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: daily-collection-apk
@@ -159,14 +215,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload build logs on failure
-        if: steps.build.outcome == 'failure'
+      - name: Upload logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-output
+          name: build-logs
           path: |
-            build/**
-            **/*.log
+            build.log
+            analyze.log
           if-no-files-found: ignore
-          retention-days: 5
+          retention-days: 7
           
