@@ -56,10 +56,10 @@ jobs:
         run: |
           rm -rf android ios .dart_tool build
           flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
-          echo "=== Default build.gradle.kts from flutter create ==="
-          cat android/app/build.gradle.kts || true
+          echo "=== flutter create done ==="
+          cat android/app/build.gradle.kts
 
-      - name: Write AndroidManifest only
+      - name: Write AndroidManifest
         run: |
           mkdir -p android/app/src/main
           cat > android/app/src/main/AndroidManifest.xml << 'MANIFEST'
@@ -100,25 +100,6 @@ jobs:
           </manifest>
           MANIFEST
 
-          # Minimal namespace fix for old plugins (telephony) - only append if needed
-          if [ -f android/build.gradle.kts ] && ! grep -q "afterEvaluate" android/build.gradle.kts; then
-            cat >> android/build.gradle.kts << 'GBEOF'
-
-          subprojects {
-              afterEvaluate {
-                  if (project.hasProperty("android")) {
-                      val androidExt = project.extensions.findByName("android")
-                      if (androidExt is com.android.build.gradle.BaseExtension) {
-                          if (androidExt.namespace == null) {
-                              androidExt.namespace = "com.dailyhisab." + project.name.replace("-", "_")
-                          }
-                      }
-                  }
-              }
-          }
-          GBEOF
-          fi
-
           mkdir -p test
           cat > test/widget_test.dart << 'TESTEOF'
           import 'package:flutter_test/flutter_test.dart';
@@ -146,11 +127,11 @@ jobs:
       - name: Show errors
         if: always()
         run: |
-          echo "=== LAST 50 LINES ==="
-          tail -50 build.log || true
+          echo "=== LAST 40 LINES ==="
+          tail -40 build.log || true
           echo "=== KEY ERRORS ==="
-          grep -E "What went wrong|error •|Error:|FAILURE|Expecting|e: file|Script compilation" build.log | head -30 || true
-          grep -E "error •" analyze.log | head -15 || true
+          grep -E "What went wrong|error •|Error:|FAILURE|e: file|Script compilation" build.log | head -25 || true
+          grep -E "error •" analyze.log | head -10 || true
 
       - name: Find APK
         if: always()
