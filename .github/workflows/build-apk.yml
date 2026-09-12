@@ -56,9 +56,10 @@ jobs:
         run: |
           rm -rf android ios .dart_tool build
           flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
-          ls android/app/
+          echo "=== Default build.gradle.kts from flutter create ==="
+          cat android/app/build.gradle.kts || true
 
-      - name: Write AndroidManifest
+      - name: Write AndroidManifest only
         run: |
           mkdir -p android/app/src/main
           cat > android/app/src/main/AndroidManifest.xml << 'MANIFEST'
@@ -99,67 +100,9 @@ jobs:
           </manifest>
           MANIFEST
 
-      - name: Write safe app/build.gradle.kts
-        run: |
-          # Read namespace from existing file if possible
-          NS="com.dailyhisab.daily_collection_app"
-          if [ -f android/app/build.gradle.kts ]; then
-            FOUND=$(grep -oP 'namespace\s*=\s*"\K[^"]+' android/app/build.gradle.kts | head -1 || true)
-            if [ -n "$FOUND" ]; then NS="$FOUND"; fi
-          fi
-          echo "Using namespace: $NS"
-
-          cat > android/app/build.gradle.kts << GKEOF
-          plugins {
-              id("com.android.application")
-              id("kotlin-android")
-              // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
-              id("dev.flutter.flutter-gradle-plugin")
-          }
-
-          android {
-              namespace = "$NS"
-              compileSdk = 36
-              ndkVersion = flutter.ndkVersion
-
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-              }
-
-              kotlinOptions {
-                  jvmTarget = JavaVersion.VERSION_17.toString()
-              }
-
-              defaultConfig {
-                  applicationId = "$NS"
-                  minSdk = flutter.minSdkVersion
-                  targetSdk = 36
-                  versionCode = flutter.versionCode
-                  versionName = flutter.versionName
-              }
-
-              buildTypes {
-                  release {
-                      // TODO: Add your own signing config for the release build.
-                      // Signing with the debug keys for now, so flutter run --release works.
-                      signingConfig = signingConfigs.getByName("debug")
-                  }
-              }
-          }
-
-          flutter {
-              source = "../.."
-          }
-          GKEOF
-
-          echo "=== Written build.gradle.kts ==="
-          cat android/app/build.gradle.kts
-
-          # Namespace fix for old plugins
-          if [ -f android/build.gradle.kts ]; then
-            if ! grep -q "afterEvaluate" android/build.gradle.kts; then
-              cat >> android/build.gradle.kts << 'GBEOF'
+          # Minimal namespace fix for old plugins (telephony) - only append if needed
+          if [ -f android/build.gradle.kts ] && ! grep -q "afterEvaluate" android/build.gradle.kts; then
+            cat >> android/build.gradle.kts << 'GBEOF'
 
           subprojects {
               afterEvaluate {
@@ -174,18 +117,13 @@ jobs:
               }
           }
           GBEOF
-            fi
           fi
 
-          # Clean widget test
           mkdir -p test
           cat > test/widget_test.dart << 'TESTEOF'
           import 'package:flutter_test/flutter_test.dart';
-
           void main() {
-            test('placeholder', () {
-              expect(1 + 1, 2);
-            });
+            test('placeholder', () { expect(1 + 1, 2); });
           }
           TESTEOF
 
@@ -212,6 +150,7 @@ jobs:
           tail -50 build.log || true
           echo "=== KEY ERRORS ==="
           grep -E "What went wrong|error •|Error:|FAILURE|Expecting|e: file|Script compilation" build.log | head -30 || true
+          grep -E "error •" analyze.log | head -15 || true
 
       - name: Find APK
         if: always()
