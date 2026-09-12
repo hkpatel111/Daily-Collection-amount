@@ -111,34 +111,65 @@ jobs:
           flutter clean || true
           flutter pub get
 
-      - name: Fix namespace for old plugins (telephony etc.)
+      - name: Fix old plugins (namespace + JVM 17)
         run: |
-          echo "Patching old Android plugins missing namespace..."
-          # Patch any plugin build.gradle that has android { but no namespace
+          echo "=== Patching old Android plugins ==="
           find "$HOME/.pub-cache" -path "*/android/build.gradle" -type f 2>/dev/null | while read -r f; do
+            CHANGED=0
+            # 1) Namespace
             if grep -q "android\s*{" "$f" && ! grep -q "namespace" "$f"; then
-              echo "Patching: $f"
-              # Insert namespace right after "android {"
-              # Use a generic namespace derived from folder name
               PKG=$(echo "$f" | sed -n 's|.*/hosted/pub.dev/\([^/]*\)/.*|\1|p' | tr '.-' '_' | head -c 40)
-              if [ -z "$PKG" ]; then PKG="unknown_plugin"; fi
+              [ -z "$PKG" ] && PKG="plugin"
               sed -i "s/android\s*{/android {\n    namespace \"com.dailyhisab.$PKG\"/" "$f"
+              echo "Namespace -> $f"
+              CHANGED=1
+            fi
+            # 2) Java compatibility -> 17
+            if grep -q "sourceCompatibility\|targetCompatibility\|JavaVersion" "$f"; then
+              sed -i 's/JavaVersion\.VERSION_1_8/JavaVersion.VERSION_17/g' "$f"
+              sed -i 's/JavaVersion\.VERSION_11/JavaVersion.VERSION_17/g' "$f"
+              sed -i 's/sourceCompatibility\s*=\s*JavaVersion\.[A-Z0-9_]*/sourceCompatibility = JavaVersion.VERSION_17/' "$f"
+              sed -i 's/targetCompatibility\s*=\s*JavaVersion\.[A-Z0-9_]*/targetCompatibility = JavaVersion.VERSION_17/' "$f"
+              sed -i "s/sourceCompatibility\s*JavaVersion\.[A-Z0-9_]*/sourceCompatibility JavaVersion.VERSION_17/" "$f"
+              sed -i "s/targetCompatibility\s*JavaVersion\.[A-Z0-9_]*/targetCompatibility JavaVersion.VERSION_17/" "$f"
+              echo "Java 17 -> $f"
+              CHANGED=1
+            fi
+            # 3) Kotlin jvmTarget -> 17
+            if grep -q "jvmTarget" "$f"; then
+              sed -i "s/jvmTarget\s*=\s*['\"]1\.8['\"]/jvmTarget = '17'/" "$f"
+              sed -i 's/jvmTarget\s*=\s*"1\.8"/jvmTarget = "17"/' "$f"
+              sed -i "s/jvmTarget\s*'1\.8'/jvmTarget '17'/" "$f"
+              sed -i 's/jvmTarget\s*"1\.8"/jvmTarget "17"/' "$f"
+              echo "jvmTarget 17 -> $f"
+              CHANGED=1
+            fi
+            # If no compileOptions block, inject one inside android {}
+            if ! grep -q "compileOptions" "$f" && grep -q "android\s*{" "$f"; then
+              sed -i '/android\s*{/a\    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }\n    kotlinOptions {\n        jvmTarget = "17"\n    }' "$f"
+              echo "Injected compileOptions+kotlinOptions -> $f"
+              CHANGED=1
             fi
           done
-          # Also patch build.gradle.kts plugins if any
+
+          # Same for .kts plugin files
           find "$HOME/.pub-cache" -path "*/android/build.gradle.kts" -type f 2>/dev/null | while read -r f; do
             if grep -q "android\s*{" "$f" && ! grep -q "namespace" "$f"; then
-              echo "Patching kts: $f"
               PKG=$(echo "$f" | sed -n 's|.*/hosted/pub.dev/\([^/]*\)/.*|\1|p' | tr '.-' '_' | head -c 40)
-              if [ -z "$PKG" ]; then PKG="unknown_plugin"; fi
+              [ -z "$PKG" ] && PKG="plugin"
               sed -i "s/android\s*{/android {\n    namespace = \"com.dailyhisab.$PKG\"/" "$f"
+              echo "Namespace kts -> $f"
             fi
+            sed -i 's/JavaVersion\.VERSION_1_8/JavaVersion.VERSION_17/g' "$f" || true
+            sed -i 's/JavaVersion\.VERSION_11/JavaVersion.VERSION_17/g' "$f" || true
+            sed -i 's/jvmTarget.set(JvmTarget.JVM_1_8)/jvmTarget.set(JvmTarget.JVM_17)/g' "$f" || true
+            sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/g' "$f" || true
           done
-          echo "Namespace patch done"
-          # Verify telephony
+
+          echo "=== telephony build.gradle after patch ==="
           find "$HOME/.pub-cache" -path "*telephony*/android/build.gradle" -type f 2>/dev/null | while read -r f; do
-            echo "=== $f ==="
-            head -30 "$f"
+            echo "FILE: $f"
+            cat "$f"
           done
 
       - name: Analyze
@@ -158,8 +189,7 @@ jobs:
           echo "=== LAST 40 LINES ==="
           tail -40 build.log || true
           echo "=== KEY ERRORS ==="
-          grep -E "What went wrong|error •|Error:|FAILURE|e: file|Namespace" build.log | head -25 || true
-          grep -E "error •" analyze.log | head -10 || true
+          grep -E "What went wrong|error •|Error:|FAILURE|Namespace|Inconsistent JVM" build.log | head -25 || true
 
       - name: Find APK
         if: always()
