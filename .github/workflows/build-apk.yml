@@ -56,7 +56,6 @@ jobs:
             sed -i 's/compileSdk = [0-9][0-9]*/compileSdk = 36/' android/app/build.gradle.kts
             sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' android/app/build.gradle.kts
             sed -i 's/targetSdk = [0-9][0-9]*/targetSdk = 36/' android/app/build.gradle.kts
-            cat android/app/build.gradle.kts
           fi
 
       - name: Write AndroidManifest
@@ -103,57 +102,107 @@ jobs:
       - name: Flutter pub get
         run: flutter clean || true; flutter pub get
 
-      - name: Aggressive plugin patch (compileSdk 36 + namespace + JVM)
+      - name: Patch plugins + force telephony Java/Kotlin 17
         run: |
-          # Patch ALL android build.gradle under pub-cache
+          # Generic patch all android gradle files
           find "$HOME/.pub-cache" \( -name "build.gradle" -o -name "build.gradle.kts" \) -path "*/android/*" 2>/dev/null | while read -r f; do
-            echo "Patch: $f"
-            # namespace
-            if grep -qE 'android\s*\{' "$f" && ! grep -q namespace "$f"; then
+            if grep -qE 'android[[:space:]]*\{' "$f" && ! grep -q namespace "$f"; then
               PKG=$(echo "$f" | sed -n 's|.*/hosted/pub.dev/\([^/]*\)/.*|\1|p' | tr '.-' '_' | head -c 40)
               [ -z "$PKG" ] && PKG="plugin"
               if [[ "$f" == *.kts ]]; then
-                sed -i "s/android\s*{/android {\n    namespace = \"com.dailyhisab.$PKG\"/" "$f"
+                sed -i "s/android[[:space:]]*{/android {\n    namespace = \"com.dailyhisab.$PKG\"/" "$f"
               else
-                sed -i "s/android\s*{/android {\n    namespace \"com.dailyhisab.$PKG\"/" "$f"
+                sed -i "s/android[[:space:]]*{/android {\n    namespace \"com.dailyhisab.$PKG\"/" "$f"
               fi
             fi
-            # compileSdk force 36 — many patterns
-            sed -i 's/compileSdkVersion\s*=\s*flutter\.compileSdkVersion/compileSdkVersion = 36/' "$f" || true
-            sed -i 's/compileSdk\s*=\s*flutter\.compileSdkVersion/compileSdk = 36/' "$f" || true
-            sed -i 's/compileSdkVersion\s*flutter\.compileSdkVersion/compileSdkVersion 36/' "$f" || true
-            sed -i 's/compileSdkVersion\s*[0-9][0-9]*/compileSdkVersion 36/' "$f" || true
-            sed -i 's/compileSdk\s*=\s*[0-9][0-9]*/compileSdk = 36/' "$f" || true
-            sed -i 's/compileSdkVersion\s*=\s*[0-9][0-9]*/compileSdkVersion = 36/' "$f" || true
-            # JVM
-            sed -i 's/JavaVersion\.VERSION_1_8/JavaVersion.VERSION_17/g' "$f" || true
-            sed -i 's/JavaVersion\.VERSION_11/JavaVersion.VERSION_17/g' "$f" || true
+            sed -i 's/compileSdkVersion[[:space:]]*=[[:space:]]*flutter\.compileSdkVersion/compileSdkVersion = 36/g' "$f" || true
+            sed -i 's/compileSdk[[:space:]]*=[[:space:]]*flutter\.compileSdkVersion/compileSdk = 36/g' "$f" || true
+            sed -i 's/compileSdkVersion[[:space:]]*[0-9][0-9]*/compileSdkVersion 36/g' "$f" || true
+            sed -i 's/compileSdk[[:space:]]*=[[:space:]]*[0-9][0-9]*/compileSdk = 36/g' "$f" || true
+            sed -i 's/VERSION_1_8/VERSION_17/g' "$f" || true
+            sed -i 's/VERSION_11/VERSION_17/g' "$f" || true
             sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/g' "$f" || true
             sed -i "s/jvmTarget = '1.8'/jvmTarget = '17'/g" "$f" || true
+            sed -i 's/JVM_1_8/JVM_17/g' "$f" || true
           done
 
-          # file_picker specific — show and force
-          echo "=== file_picker gradle files ==="
-          find "$HOME/.pub-cache" -path "*file_picker*" -name "build.gradle*" 2>/dev/null | while read -r f; do
-            echo "FILE: $f"
-            # If still has no compileSdk 36, inject
-            if ! grep -q "compileSdk.*36" "$f"; then
-              if grep -qE 'android\s*\{' "$f"; then
-                sed -i '/android\s*{/a\    compileSdk 36' "$f"
-                echo "Injected compileSdk 36 into $f"
-              fi
+          # TELEPHONY: overwrite android/build.gradle with known-good content
+          TELE_DIR=$(find "$HOME/.pub-cache" -type d -path "*telephony-0.2.0/android" 2>/dev/null | head -1)
+          if [ -n "$TELE_DIR" ] && [ -d "$TELE_DIR" ]; then
+            echo "Rewriting $TELE_DIR/build.gradle"
+            cat > "$TELE_DIR/build.gradle" << 'TGRADLE'
+group 'com.shounakmulay.telephony'
+version '1.0-SNAPSHOT'
+
+buildscript {
+    ext.kotlin_version = '1.8.22'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace "com.shounakmulay.telephony"
+    compileSdkVersion 36
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    defaultConfig {
+        minSdkVersion 16
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+}
+TGRADLE
+            # Strip package from manifest
+            MF="$TELE_DIR/src/main/AndroidManifest.xml"
+            if [ -f "$MF" ]; then
+              sed -i 's/ package="[^"]*"//g' "$MF"
+              sed -i "s/ package='[^']*'//g" "$MF"
+              echo "Manifest:" && cat "$MF"
             fi
-            cat "$f" | head -50
-          done
+            echo "telephony build.gradle:" && cat "$TELE_DIR/build.gradle"
+          else
+            echo "WARNING: telephony android dir not found"
+            find "$HOME/.pub-cache" -path "*telephony*" -type d 2>/dev/null | head -20
+          fi
 
-          # Strip package= from manifests
+          # Strip package= from all plugin manifests
           find "$HOME/.pub-cache" -path "*/android/src/main/AndroidManifest.xml" -type f 2>/dev/null | while read -r f; do
             if grep -q 'package=' "$f"; then
               sed -i 's/ package="[^"]*"//g' "$f"
               sed -i "s/ package='[^']*'//g" "$f"
             fi
           done
-          echo "=== Done plugin patches ==="
+          echo "=== patches done ==="
 
       - name: Analyze
         continue-on-error: true
@@ -165,11 +214,11 @@ jobs:
           set -o pipefail
           flutter build apk --release -v 2>&1 | tee build.log
 
-      - name: Show errors / APK
+      - name: Show result
         if: always()
         run: |
           tail -50 build.log || true
-          grep -E "What went wrong|FAILURE|✓ Built|app-release" build.log | head -20 || true
+          grep -E "What went wrong|FAILURE|✓ Built|app-release|Inconsistent JVM" build.log | head -20 || true
           find . -name "*.apk" -type f 2>/dev/null || true
 
       - name: Upload APK
