@@ -68,39 +68,25 @@ jobs:
       - name: Flutter pub get
         run: flutter clean || true; flutter pub get
 
-      - name: Patch plugins
+      - name: Patch all plugins (Python)
         run: |
-          find "$HOME/.pub-cache" -name "build.gradle" -path "*/android/*" 2>/dev/null | while read -r f; do
-            if grep -q "android" "$f" && ! grep -q "namespace" "$f"; then
-              PKG=$(echo "$f" | sed -n 's|.*/hosted/pub.dev/\([^/]*\)/.*|\1|p' | tr '.-' '_' | head -c 40)
-              [ -z "$PKG" ] && PKG="plugin"
-              sed -i "s/android {/android {\n    namespace \"com.dailyhisab.$PKG\"/" "$f" || true
-            fi
-            sed -i 's/VERSION_1_8/VERSION_17/g' "$f" || true
-            sed -i 's/VERSION_11/VERSION_17/g' "$f" || true
-            sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/g' "$f" || true
-            sed -i 's/compileSdkVersion [0-9][0-9]*/compileSdkVersion 36/g' "$f" || true
-            sed -i 's/compileSdk = [0-9][0-9]*/compileSdk = 36/g' "$f" || true
-          done
+          echo "CmltcG9ydCByZSwgb3MKZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnJvb3QgPSBQYXRoKG9zLnBhdGguZXhwYW5kdXNlcigifi8ucHViLWNhY2hlIikpCmNvdW50ID0gMApmb3IgcCBpbiByb290LnJnbG9iKCJidWlsZC5ncmFkbGUqIik6CiAgICBpZiAiYW5kcm9pZCIgbm90IGluIHN0cihwKS5yZXBsYWNlKCJcXCIsICIvIik6CiAgICAgICAgY29udGludWUKICAgIHRyeToKICAgICAgICB0ID0gcC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IiwgZXJyb3JzPSJpZ25vcmUiKQogICAgZXhjZXB0IEV4Y2VwdGlvbjoKICAgICAgICBjb250aW51ZQogICAgb3JpZyA9IHQKICAgICMgZm9yY2UgY29tcGlsZVNkayBwYXR0ZXJucwogICAgdCA9IHJlLnN1YihyImNvbXBpbGVTZGtWZXJzaW9uXHMqPVxzKmZsdXR0ZXJcLmNvbXBpbGVTZGtWZXJzaW9uIiwgImNvbXBpbGVTZGtWZXJzaW9uID0gMzYiLCB0KQogICAgdCA9IHJlLnN1YihyImNvbXBpbGVTZGtccyo9XHMqZmx1dHRlclwuY29tcGlsZVNka1ZlcnNpb24iLCAiY29tcGlsZVNkayA9IDM2IiwgdCkKICAgIHQgPSByZS5zdWIociJjb21waWxlU2RrVmVyc2lvblxzK1xkKyIsICJjb21waWxlU2RrVmVyc2lvbiAzNiIsIHQpCiAgICB0ID0gcmUuc3ViKHIiY29tcGlsZVNka1xzKj1ccypcZCsiLCAiY29tcGlsZVNkayA9IDM2IiwgdCkKICAgIHQgPSByZS5zdWIociJjb21waWxlU2RrVmVyc2lvblxzKj1ccypcZCsiLCAiY29tcGlsZVNka1ZlcnNpb24gPSAzNiIsIHQpCiAgICAjIEpWTQogICAgdCA9IHQucmVwbGFjZSgiVkVSU0lPTl8xXzgiLCAiVkVSU0lPTl8xNyIpLnJlcGxhY2UoIlZFUlNJT05fMTEiLCAiVkVSU0lPTl8xNyIpCiAgICB0ID0gdC5yZXBsYWNlKCdqdm1UYXJnZXQgPSAiMS44IicsICdqdm1UYXJnZXQgPSAiMTciJykucmVwbGFjZSgianZtVGFyZ2V0ID0gJzEuOCciLCAianZtVGFyZ2V0ID0gJzE3JyIpCiAgICAjIG5hbWVzcGFjZSBpZiBtaXNzaW5nCiAgICBpZiAiYW5kcm9pZCIgaW4gdCBhbmQgIm5hbWVzcGFjZSIgbm90IGluIHQ6CiAgICAgICAgcGtnID0gImNvbS5kYWlseWhpc2FiLnBsdWdpbiIKICAgICAgICBtID0gcmUuc2VhcmNoKHIiaG9zdGVkL3B1YlwuZGV2LyhbXi9dKykvIiwgc3RyKHApLnJlcGxhY2UoIlxcIiwgIi8iKSkKICAgICAgICBpZiBtOgogICAgICAgICAgICBwa2cgPSAiY29tLmRhaWx5aGlzYWIuIiArIHJlLnN1YihyIlteYS16QS1aMC05XSIsICJfIiwgbS5ncm91cCgxKSlbOjQwXQogICAgICAgIGlmIHAuc3VmZml4ID09ICIua3RzIjoKICAgICAgICAgICAgdCA9IHJlLnN1YihyImFuZHJvaWRccypceyIsIGYnYW5kcm9pZCB7e1xuICAgIG5hbWVzcGFjZSA9ICJ7cGtnfSInLCB0LCBjb3VudD0xKQogICAgICAgIGVsc2U6CiAgICAgICAgICAgIHQgPSByZS5zdWIociJhbmRyb2lkXHMqXHsiLCBmJ2FuZHJvaWQge3tcbiAgICBuYW1lc3BhY2UgIntwa2d9IicsIHQsIGNvdW50PTEpCiAgICAjIGlmIHN0aWxsIG5vIGNvbXBpbGVTZGsgMzYsIGluamVjdCBhZnRlciBhbmRyb2lkIHsKICAgIGlmICJjb21waWxlU2RrIiBpbiB0IGFuZCAiMzYiIG5vdCBpbiByZS5maW5kYWxsKHIiY29tcGlsZVNka1teXG5dKiIsIHQpWzBdIGlmIHJlLmZpbmRhbGwociJjb21waWxlU2RrW15cbl0qIiwgdCkgZWxzZSBUcnVlOgogICAgICAgIGlmICJjb21waWxlU2RrIiBub3QgaW4gdCBhbmQgcmUuc2VhcmNoKHIiYW5kcm9pZFxzKlx7IiwgdCk6CiAgICAgICAgICAgIHQgPSByZS5zdWIociIoYW5kcm9pZFxzKlx7KSIsIHIiXDFcbiAgICBjb21waWxlU2RrVmVyc2lvbiAzNiIsIHQsIGNvdW50PTEpCiAgICBpZiB0ICE9IG9yaWc6CiAgICAgICAgcC53cml0ZV90ZXh0KHQsIGVuY29kaW5nPSJ1dGYtOCIpCiAgICAgICAgY291bnQgKz0gMQogICAgICAgIHByaW50KCJwYXRjaGVkIiwgcCkKcHJpbnQoInRvdGFsIHBhdGNoZWQiLCBjb3VudCkKIyBzdHJpcCBwYWNrYWdlIGZyb20gbWFuaWZlc3RzCmZvciBwIGluIHJvb3Qucmdsb2IoIkFuZHJvaWRNYW5pZmVzdC54bWwiKToKICAgIGlmICIvYW5kcm9pZC8iIG5vdCBpbiBzdHIocCkucmVwbGFjZSgiXFwiLCAiLyIpOgogICAgICAgIGNvbnRpbnVlCiAgICB0cnk6CiAgICAgICAgdCA9IHAucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIsIGVycm9ycz0iaWdub3JlIikKICAgIGV4Y2VwdCBFeGNlcHRpb246CiAgICAgICAgY29udGludWUKICAgIHQyID0gcmUuc3ViKHInXHMrcGFja2FnZT0iW14iXSoiJywgIiIsIHQpCiAgICB0MiA9IHJlLnN1YihyIlxzK3BhY2thZ2U9J1teJ10qJyIsICIiLCB0MikKICAgIGlmIHQyICE9IHQ6CiAgICAgICAgcC53cml0ZV90ZXh0KHQyLCBlbmNvZGluZz0idXRmLTgiKQogICAgICAgIHByaW50KCJtYW5pZmVzdCIsIHApCg==" | base64 -d > /tmp/patch_plugins.py
+          python3 /tmp/patch_plugins.py
           TELE_DIR=$(find "$HOME/.pub-cache" -type d -path "*telephony-*/android" 2>/dev/null | head -1)
           if [ -n "$TELE_DIR" ]; then
             echo "Z3JvdXAgImNvbS5zaG91bmFrbXVsYXkudGVsZXBob255Igp2ZXJzaW9uICIxLjAtU05BUFNIT1QiCgpidWlsZHNjcmlwdCB7CiAgICBleHQua290bGluX3ZlcnNpb24gPSAiMS44LjIyIgogICAgcmVwb3NpdG9yaWVzIHsKICAgICAgICBnb29nbGUoKQogICAgICAgIG1hdmVuQ2VudHJhbCgpCiAgICB9CiAgICBkZXBlbmRlbmNpZXMgewogICAgICAgIGNsYXNzcGF0aCAiY29tLmFuZHJvaWQudG9vbHMuYnVpbGQ6Z3JhZGxlOjguMS4wIgogICAgICAgIGNsYXNzcGF0aCAib3JnLmpldGJyYWlucy5rb3RsaW46a290bGluLWdyYWRsZS1wbHVnaW46JGtvdGxpbl92ZXJzaW9uIgogICAgfQp9Cgpyb290UHJvamVjdC5hbGxwcm9qZWN0cyB7CiAgICByZXBvc2l0b3JpZXMgewogICAgICAgIGdvb2dsZSgpCiAgICAgICAgbWF2ZW5DZW50cmFsKCkKICAgIH0KfQoKYXBwbHkgcGx1Z2luOiAiY29tLmFuZHJvaWQubGlicmFyeSIKYXBwbHkgcGx1Z2luOiAia290bGluLWFuZHJvaWQiCgphbmRyb2lkIHsKICAgIG5hbWVzcGFjZSAiY29tLnNob3VuYWttdWxheS50ZWxlcGhvbnkiCiAgICBjb21waWxlU2RrVmVyc2lvbiAzNgoKICAgIGNvbXBpbGVPcHRpb25zIHsKICAgICAgICBzb3VyY2VDb21wYXRpYmlsaXR5IEphdmFWZXJzaW9uLlZFUlNJT05fMTcKICAgICAgICB0YXJnZXRDb21wYXRpYmlsaXR5IEphdmFWZXJzaW9uLlZFUlNJT05fMTcKICAgIH0KCiAgICBrb3RsaW5PcHRpb25zIHsKICAgICAgICBqdm1UYXJnZXQgPSAiMTciCiAgICB9CgogICAgc291cmNlU2V0cyB7CiAgICAgICAgbWFpbi5qYXZhLnNyY0RpcnMgKz0gInNyYy9tYWluL2tvdGxpbiIKICAgIH0KCiAgICBkZWZhdWx0Q29uZmlnIHsKICAgICAgICBtaW5TZGtWZXJzaW9uIDE2CiAgICB9Cn0KCmRlcGVuZGVuY2llcyB7CiAgICBpbXBsZW1lbnRhdGlvbiAib3JnLmpldGJyYWlucy5rb3RsaW46a290bGluLXN0ZGxpYi1qZGs3OiRrb3RsaW5fdmVyc2lvbiIKfQo=" | base64 -d > "$TELE_DIR/build.gradle"
-            echo "Wrote telephony build.gradle"
+            echo "telephony rewritten"
             cat "$TELE_DIR/build.gradle"
             MF="$TELE_DIR/src/main/AndroidManifest.xml"
             if [ -f "$MF" ]; then
               sed -i 's/ package="[^"]*"//g' "$MF"
               sed -i "s/ package='[^']*'//g" "$MF"
-              cat "$MF"
             fi
-          else
-            echo "telephony dir not found"
           fi
-          find "$HOME/.pub-cache" -path "*/android/src/main/AndroidManifest.xml" -type f 2>/dev/null | while read -r f; do
-            if grep -q 'package=' "$f"; then
-              sed -i 's/ package="[^"]*"//g' "$f"
-              sed -i "s/ package='[^']*'//g" "$f"
-            fi
+          echo "=== file_picker gradle after patch ==="
+          find "$HOME/.pub-cache" -path "*file_picker*" -name "build.gradle*" 2>/dev/null | while read f; do
+            echo "FILE $f"
+            cat "$f"
           done
 
       - name: Analyze
@@ -117,7 +103,7 @@ jobs:
         if: always()
         run: |
           tail -50 build.log || true
-          grep -E "What went wrong|FAILURE|Built|app-release|Inconsistent JVM" build.log | head -20 || true
+          grep -E "What went wrong|FAILURE|Built|app-release|file_picker|compileSdk" build.log | head -25 || true
           find . -name "*.apk" -type f 2>/dev/null || true
 
       - name: Upload APK
