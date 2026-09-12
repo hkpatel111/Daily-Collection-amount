@@ -70,12 +70,12 @@ jobs:
 
       - name: Flutter create scaffolding
         run: |
-          if [ ! -d android ]; then
-            echo "Creating Flutter scaffolding..."
-            flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
-          else
-            echo "android/ folder already exists"
-          fi
+          # Always use fresh Android v2 embedding scaffolding
+          rm -rf android ios .dart_tool build
+          echo "Creating fresh Flutter scaffolding..."
+          flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
+          echo "Scaffolding created"
+          ls android/
 
       - name: Write AndroidManifest
         run: |
