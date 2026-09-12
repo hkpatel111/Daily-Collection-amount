@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
 
     steps:
       - name: Checkout repository
@@ -34,28 +34,39 @@ jobs:
           fi
           if [ -n "$ZIPFILE" ]; then
             echo "Found ZIP: $ZIPFILE"
-            rm -rf extracted
-            mkdir -p extracted
+            rm -rf extracted && mkdir -p extracted
             unzip -o "$ZIPFILE" -d extracted
-            if [ -d extracted/daily_collection_app ]; then
-              cp -a extracted/daily_collection_app/. .
-            elif [ -d extracted/daily_collection_v8 ]; then
-              cp -a extracted/daily_collection_v8/. .
-            elif [ -f extracted/pubspec.yaml ]; then
-              cp -a extracted/. .
+            if [ -d extracted/daily_collection_app ]; then cp -a extracted/daily_collection_app/. .
+            elif [ -d extracted/daily_collection_v8 ]; then cp -a extracted/daily_collection_v8/. .
+            elif [ -f extracted/pubspec.yaml ]; then cp -a extracted/. .
             else
               INNER=$(find extracted -name "pubspec.yaml" | head -1)
-              if [ -n "$INNER" ]; then
-                cp -a "$(dirname "$INNER")"/. .
-              fi
+              [ -n "$INNER" ] && cp -a "$(dirname "$INNER")"/. .
             fi
           fi
-          test -f pubspec.yaml && echo "pubspec.yaml OK" || (echo "ERROR: pubspec.yaml missing" && exit 1)
+          test -f pubspec.yaml && echo "pubspec.yaml OK" || (echo "ERROR: no pubspec" && exit 1)
 
       - name: Flutter create scaffolding
         run: |
           rm -rf android ios .dart_tool build
           flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
+
+      - name: Set compileSdk 36 (app only, safe)
+        run: |
+          if [ -f android/app/build.gradle.kts ]; then
+            # Only touch compileSdk / targetSdk lines — do not touch kotlinOptions
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
+            sed -i 's/compileSdk = [0-9][0-9]*/compileSdk = 36/' android/app/build.gradle.kts
+            sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' android/app/build.gradle.kts
+            sed -i 's/targetSdk = [0-9][0-9]*/targetSdk = 36/' android/app/build.gradle.kts
+            echo "=== app/build.gradle.kts ==="
+            cat android/app/build.gradle.kts
+          fi
+          if [ -f android/app/build.gradle ]; then
+            sed -i 's/compileSdkVersion [0-9]*/compileSdk 36/' android/app/build.gradle
+            sed -i 's/compileSdk = [0-9]*/compileSdk = 36/' android/app/build.gradle
+            sed -i 's/targetSdkVersion [0-9]*/targetSdk 36/' android/app/build.gradle
+          fi
 
       - name: Write AndroidManifest
         run: |
@@ -97,13 +108,10 @@ jobs:
               </application>
           </manifest>
           MANIFEST
-
           mkdir -p test
           cat > test/widget_test.dart << 'TESTEOF'
           import 'package:flutter_test/flutter_test.dart';
-          void main() {
-            test('placeholder', () { expect(1 + 1, 2); });
-          }
+          void main() { test('placeholder', () { expect(1 + 1, 2); }); }
           TESTEOF
 
       - name: Flutter pub get
@@ -111,26 +119,25 @@ jobs:
           flutter clean || true
           flutter pub get
 
-      - name: Fix old plugins (namespace + JVM 17 + manifest package)
+      - name: Fix old plugins (namespace, JVM17, manifest package, compileSdk 36)
         run: |
-          echo "=== Patching old Android plugins ==="
+          echo "=== Patching plugins in pub-cache ==="
           find "$HOME/.pub-cache" -path "*/android/build.gradle" -type f 2>/dev/null | while read -r f; do
             if grep -q "android\s*{" "$f" && ! grep -q "namespace" "$f"; then
               PKG=$(echo "$f" | sed -n 's|.*/hosted/pub.dev/\([^/]*\)/.*|\1|p' | tr '.-' '_' | head -c 40)
               [ -z "$PKG" ] && PKG="plugin"
               sed -i "s/android\s*{/android {\n    namespace \"com.dailyhisab.$PKG\"/" "$f"
-              echo "Namespace -> $f"
             fi
-            if grep -q "sourceCompatibility\|targetCompatibility\|JavaVersion\|jvmTarget" "$f"; then
-              sed -i 's/JavaVersion\.VERSION_1_8/JavaVersion.VERSION_17/g' "$f"
-              sed -i 's/JavaVersion\.VERSION_11/JavaVersion.VERSION_17/g' "$f"
-              sed -i "s/jvmTarget\s*=\s*['\"]1\.8['\"]/jvmTarget = '17'/" "$f"
-              sed -i 's/jvmTarget\s*=\s*"1\.8"/jvmTarget = "17"/' "$f"
-              sed -i "s/jvmTarget\s*'1\.8'/jvmTarget '17'/" "$f"
-            fi
+            sed -i 's/JavaVersion\.VERSION_1_8/JavaVersion.VERSION_17/g' "$f" || true
+            sed -i 's/JavaVersion\.VERSION_11/JavaVersion.VERSION_17/g' "$f" || true
+            sed -i "s/jvmTarget\s*=\s*['\"]1\.8['\"]/jvmTarget = '17'/" "$f" || true
+            sed -i 's/jvmTarget\s*=\s*"1\.8"/jvmTarget = "17"/' "$f" || true
+            # Force compileSdk 36 on plugins that pin older SDK
+            sed -i 's/compileSdkVersion\s*[0-9][0-9]*/compileSdkVersion 36/' "$f" || true
+            sed -i 's/compileSdk\s*=\s*[0-9][0-9]*/compileSdk = 36/' "$f" || true
+            sed -i 's/compileSdkVersion\s*=\s*[0-9][0-9]*/compileSdkVersion = 36/' "$f" || true
             if ! grep -q "compileOptions" "$f" && grep -q "android\s*{" "$f"; then
               sed -i '/android\s*{/a\    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }\n    kotlinOptions {\n        jvmTarget = "17"\n    }' "$f"
-              echo "Injected JVM 17 -> $f"
             fi
           done
 
@@ -140,38 +147,27 @@ jobs:
               [ -z "$PKG" ] && PKG="plugin"
               sed -i "s/android\s*{/android {\n    namespace = \"com.dailyhisab.$PKG\"/" "$f"
             fi
+            sed -i 's/compileSdk\s*=\s*[0-9][0-9]*/compileSdk = 36/' "$f" || true
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$f" || true
             sed -i 's/JavaVersion\.VERSION_1_8/JavaVersion.VERSION_17/g' "$f" || true
-            sed -i 's/JavaVersion\.VERSION_11/JavaVersion.VERSION_17/g' "$f" || true
             sed -i 's/jvmTarget = "1.8"/jvmTarget = "17"/g' "$f" || true
           done
 
-          # CRITICAL: Remove package= from plugin AndroidManifest.xml (AGP 8+)
-          echo "=== Removing package= from plugin manifests ==="
+          # Remove package= from plugin manifests
           find "$HOME/.pub-cache" -path "*/android/src/main/AndroidManifest.xml" -type f 2>/dev/null | while read -r f; do
             if grep -q 'package=' "$f"; then
-              echo "Stripping package= from $f"
-              # Remove package="..." attribute from <manifest ...>
               sed -i 's/ package="[^"]*"//g' "$f"
               sed -i "s/ package='[^']*'//g" "$f"
+              echo "Stripped package= from $f"
             fi
           done
-
-          echo "=== telephony checks ==="
-          find "$HOME/.pub-cache" -path "*telephony*/android/build.gradle" -type f 2>/dev/null | while read -r f; do
-            echo "GRADLE: $f"
-            head -40 "$f"
-          done
-          find "$HOME/.pub-cache" -path "*telephony*/android/src/main/AndroidManifest.xml" -type f 2>/dev/null | while read -r f; do
-            echo "MANIFEST: $f"
-            cat "$f"
-          done
+          echo "=== Plugin patch done ==="
 
       - name: Analyze
         continue-on-error: true
         run: flutter analyze --no-fatal-infos 2>&1 | tee analyze.log || true
 
       - name: Build APK
-        id: build
         continue-on-error: true
         run: |
           set -o pipefail
@@ -180,10 +176,8 @@ jobs:
       - name: Show errors
         if: always()
         run: |
-          echo "=== LAST 40 LINES ==="
           tail -40 build.log || true
-          echo "=== KEY ERRORS ==="
-          grep -E "What went wrong|error •|Error:|FAILURE|Namespace|Inconsistent JVM|package=" build.log | head -25 || true
+          grep -E "What went wrong|error •|FAILURE|compileSdk|Namespace" build.log | head -20 || true
 
       - name: Find APK
         if: always()
