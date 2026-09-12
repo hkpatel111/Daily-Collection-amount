@@ -49,7 +49,7 @@ jobs:
           rm -rf android ios .dart_tool build
           flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
 
-      - name: Set app compileSdk 36 and force subprojects
+      - name: Set app compileSdk 36
         run: |
           if [ -f android/app/build.gradle.kts ]; then
             sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
@@ -57,10 +57,6 @@ jobs:
             sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' android/app/build.gradle.kts
             sed -i 's/targetSdk = [0-9][0-9]*/targetSdk = 36/' android/app/build.gradle.kts
           fi
-          # Append force compileSdk for all android library subprojects
-          echo "CnN1YnByb2plY3RzIHsKICAgIHBsdWdpbk1hbmFnZXIud2l0aFBsdWdpbigiY29tLmFuZHJvaWQubGlicmFyeSIpIHsKICAgICAgICBleHRlbnNpb25zLmNvbmZpZ3VyZShjb20uYW5kcm9pZC5idWlsZC5ncmFkbGUuTGlicmFyeUV4dGVuc2lvbjo6Y2xhc3MuamF2YSkgewogICAgICAgICAgICBjb21waWxlU2RrID0gMzYKICAgICAgICB9CiAgICB9CiAgICBwbHVnaW5NYW5hZ2VyLndpdGhQbHVnaW4oImNvbS5hbmRyb2lkLmFwcGxpY2F0aW9uIikgewogICAgICAgIGV4dGVuc2lvbnMuY29uZmlndXJlKGNvbS5hbmRyb2lkLmJ1aWxkLmdyYWRsZS5BcHBFeHRlbnNpb246OmNsYXNzLmphdmEpIHsKICAgICAgICAgICAgY29tcGlsZVNkayA9IDM2CiAgICAgICAgfQogICAgfQp9Cg==" | base64 -d >> android/build.gradle.kts
-          echo "=== android/build.gradle.kts ==="
-          cat android/build.gradle.kts
 
       - name: Write AndroidManifest
         run: |
@@ -72,32 +68,21 @@ jobs:
       - name: Flutter pub get
         run: flutter clean || true; flutter pub get
 
-      - name: Patch telephony + file_picker hard
+      - name: Patch telephony only
         run: |
           TELE_DIR=$(find "$HOME/.pub-cache" -type d -path "*telephony-*/android" 2>/dev/null | head -1)
           if [ -n "$TELE_DIR" ]; then
             echo "Z3JvdXAgImNvbS5zaG91bmFrbXVsYXkudGVsZXBob255Igp2ZXJzaW9uICIxLjAtU05BUFNIT1QiCmJ1aWxkc2NyaXB0IHsKICAgIGV4dC5rb3RsaW5fdmVyc2lvbiA9ICIxLjguMjIiCiAgICByZXBvc2l0b3JpZXMgeyBnb29nbGUoKTsgbWF2ZW5DZW50cmFsKCkgfQogICAgZGVwZW5kZW5jaWVzIHsKICAgICAgICBjbGFzc3BhdGggImNvbS5hbmRyb2lkLnRvb2xzLmJ1aWxkOmdyYWRsZTo4LjEuMCIKICAgICAgICBjbGFzc3BhdGggIm9yZy5qZXRicmFpbnMua290bGluOmtvdGxpbi1ncmFkbGUtcGx1Z2luOiRrb3RsaW5fdmVyc2lvbiIKICAgIH0KfQpyb290UHJvamVjdC5hbGxwcm9qZWN0cyB7IHJlcG9zaXRvcmllcyB7IGdvb2dsZSgpOyBtYXZlbkNlbnRyYWwoKSB9IH0KYXBwbHkgcGx1Z2luOiAiY29tLmFuZHJvaWQubGlicmFyeSIKYXBwbHkgcGx1Z2luOiAia290bGluLWFuZHJvaWQiCmFuZHJvaWQgewogICAgbmFtZXNwYWNlICJjb20uc2hvdW5ha211bGF5LnRlbGVwaG9ueSIKICAgIGNvbXBpbGVTZGtWZXJzaW9uIDM2CiAgICBjb21waWxlT3B0aW9ucyB7CiAgICAgICAgc291cmNlQ29tcGF0aWJpbGl0eSBKYXZhVmVyc2lvbi5WRVJTSU9OXzE3CiAgICAgICAgdGFyZ2V0Q29tcGF0aWJpbGl0eSBKYXZhVmVyc2lvbi5WRVJTSU9OXzE3CiAgICB9CiAgICBrb3RsaW5PcHRpb25zIHsganZtVGFyZ2V0ID0gIjE3IiB9CiAgICBzb3VyY2VTZXRzIHsgbWFpbi5qYXZhLnNyY0RpcnMgKz0gInNyYy9tYWluL2tvdGxpbiIgfQogICAgZGVmYXVsdENvbmZpZyB7IG1pblNka1ZlcnNpb24gMTYgfQp9CmRlcGVuZGVuY2llcyB7IGltcGxlbWVudGF0aW9uICJvcmcuamV0YnJhaW5zLmtvdGxpbjprb3RsaW4tc3RkbGliLWpkazc6JGtvdGxpbl92ZXJzaW9uIiB9Cg==" | base64 -d > "$TELE_DIR/build.gradle"
+            echo "telephony patched"
+            cat "$TELE_DIR/build.gradle"
             MF="$TELE_DIR/src/main/AndroidManifest.xml"
             if [ -f "$MF" ]; then
               sed -i 's/ package="[^"]*"//g' "$MF"
               sed -i "s/ package='[^']*'//g" "$MF"
             fi
-            echo "telephony patched"
+          else
+            echo "telephony not found"
           fi
-          # file_picker: replace any compileSdk* with 36 in all its gradle files
-          find "$HOME/.pub-cache" -path "*file_picker*" \( -name "build.gradle" -o -name "build.gradle.kts" \) 2>/dev/null | while read -r f; do
-            echo "Patching file_picker: $f"
-            sed -i 's/compileSdkVersion[ =]*[0-9][0-9]*/compileSdkVersion 36/g' "$f" || true
-            sed -i 's/compileSdk[ =]*[0-9][0-9]*/compileSdk = 36/g' "$f" || true
-            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/g' "$f" || true
-            sed -i 's/compileSdkVersion = flutter.compileSdkVersion/compileSdkVersion = 36/g' "$f" || true
-            # If no compileSdk at all, inject
-            if ! grep -q compileSdk "$f"; then
-              sed -i 's/android {/android {\n    compileSdk = 36/' "$f" 2>/dev/null || sed -i 's/android {/android {\n    compileSdkVersion 36/' "$f" || true
-            fi
-            cat "$f"
-          done
-          # Strip package attrs
           find "$HOME/.pub-cache" -path "*/android/src/main/AndroidManifest.xml" -type f 2>/dev/null | while read -r f; do
             if grep -q 'package=' "$f"; then
               sed -i 's/ package="[^"]*"//g' "$f"
@@ -118,8 +103,8 @@ jobs:
       - name: Show result
         if: always()
         run: |
-          tail -60 build.log || true
-          grep -E "What went wrong|FAILURE|Built|app-release|file_picker|compileSdk" build.log | head -30 || true
+          tail -50 build.log || true
+          grep -E "What went wrong|FAILURE|Built|app-release" build.log | head -20 || true
           find . -name "*.apk" -type f 2>/dev/null || true
 
       - name: Upload APK
@@ -143,4 +128,3 @@ jobs:
             analyze.log
           if-no-files-found: ignore
           retention-days: 7
-          
