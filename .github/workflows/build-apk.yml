@@ -26,12 +26,6 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Show workspace
-        run: |
-          echo "=== Workspace contents ==="
-          ls -la
-          find . -name "*.zip" -type f || true
-
       - name: Extract project ZIP
         run: |
           ZIPFILE=$(find . -maxdepth 2 -name "daily_collection*.zip" -type f | head -1)
@@ -43,8 +37,6 @@ jobs:
             rm -rf extracted
             mkdir -p extracted
             unzip -o "$ZIPFILE" -d extracted
-            echo "=== Extracted structure ==="
-            find extracted -maxdepth 3 -type d
             if [ -d extracted/daily_collection_app ]; then
               cp -a extracted/daily_collection_app/. .
             elif [ -d extracted/daily_collection_v8 ]; then
@@ -54,25 +46,17 @@ jobs:
             else
               INNER=$(find extracted -name "pubspec.yaml" | head -1)
               if [ -n "$INNER" ]; then
-                DIR=$(dirname "$INNER")
-                echo "Found pubspec in $DIR"
-                cp -a "$DIR"/. .
+                cp -a "$(dirname "$INNER")"/. .
               fi
             fi
-          else
-            echo "No ZIP found - assuming source already present"
           fi
-          echo "=== After extract ==="
-          ls -la
           test -f pubspec.yaml && echo "pubspec.yaml OK" || (echo "ERROR: pubspec.yaml missing" && exit 1)
 
       - name: Flutter create scaffolding
         run: |
           rm -rf android ios .dart_tool build
-          echo "Creating fresh Flutter scaffolding..."
           flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
-          echo "Scaffolding created"
-          ls android/
+          ls android/app/
 
       - name: Write AndroidManifest
         run: |
@@ -115,36 +99,66 @@ jobs:
           </manifest>
           MANIFEST
 
-      - name: Fix Gradle (compileSdk, JVM 17, namespace)
+      - name: Write safe app/build.gradle.kts
         run: |
-          # --- app/build.gradle.kts (Kotlin DSL - modern Flutter) ---
+          # Read namespace from existing file if possible
+          NS="com.dailyhisab.daily_collection_app"
           if [ -f android/app/build.gradle.kts ]; then
-            echo "Patching android/app/build.gradle.kts"
-            # Safe whole-line replacements
-            sed -i 's/compileSdk = .*/compileSdk = 36/' android/app/build.gradle.kts
-            sed -i 's/compileSdkVersion = .*/compileSdk = 36/' android/app/build.gradle.kts
-            # JVM target
-            sed -i 's/jvmTarget = .*/jvmTarget = "17"/' android/app/build.gradle.kts
-            # Java compatibility if present
-            sed -i 's/sourceCompatibility = .*/sourceCompatibility = JavaVersion.VERSION_17/' android/app/build.gradle.kts
-            sed -i 's/targetCompatibility = .*/targetCompatibility = JavaVersion.VERSION_17/' android/app/build.gradle.kts
-            echo "=== app/build.gradle.kts (relevant) ==="
-            grep -n "compileSdk\|jvmTarget\|sourceCompatibility\|targetCompatibility\|namespace" android/app/build.gradle.kts || true
+            FOUND=$(grep -oP 'namespace\s*=\s*"\K[^"]+' android/app/build.gradle.kts | head -1 || true)
+            if [ -n "$FOUND" ]; then NS="$FOUND"; fi
           fi
+          echo "Using namespace: $NS"
 
-          # --- app/build.gradle (Groovy - older) ---
-          if [ -f android/app/build.gradle ]; then
-            echo "Patching android/app/build.gradle"
-            sed -i 's/compileSdkVersion [0-9]*/compileSdk 36/' android/app/build.gradle
-            sed -i 's/compileSdk = [0-9]*/compileSdk = 36/' android/app/build.gradle
-            sed -i 's/sourceCompatibility JavaVersion.*/sourceCompatibility JavaVersion.VERSION_17/' android/app/build.gradle
-            sed -i 's/targetCompatibility JavaVersion.*/targetCompatibility JavaVersion.VERSION_17/' android/app/build.gradle
-            sed -i 's/jvmTarget = .*/jvmTarget = "17"/' android/app/build.gradle
-          fi
+          cat > android/app/build.gradle.kts << GKEOF
+          plugins {
+              id("com.android.application")
+              id("kotlin-android")
+              // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+              id("dev.flutter.flutter-gradle-plugin")
+          }
 
-          # Namespace fix for old plugins (telephony etc.)
+          android {
+              namespace = "$NS"
+              compileSdk = 36
+              ndkVersion = flutter.ndkVersion
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = JavaVersion.VERSION_17.toString()
+              }
+
+              defaultConfig {
+                  applicationId = "$NS"
+                  minSdk = flutter.minSdkVersion
+                  targetSdk = 36
+                  versionCode = flutter.versionCode
+                  versionName = flutter.versionName
+              }
+
+              buildTypes {
+                  release {
+                      // TODO: Add your own signing config for the release build.
+                      // Signing with the debug keys for now, so flutter run --release works.
+                      signingConfig = signingConfigs.getByName("debug")
+                  }
+              }
+          }
+
+          flutter {
+              source = "../.."
+          }
+          GKEOF
+
+          echo "=== Written build.gradle.kts ==="
+          cat android/app/build.gradle.kts
+
+          # Namespace fix for old plugins
           if [ -f android/build.gradle.kts ]; then
-            if ! grep -q "namespace" android/build.gradle.kts || ! grep -q "afterEvaluate" android/build.gradle.kts; then
+            if ! grep -q "afterEvaluate" android/build.gradle.kts; then
               cat >> android/build.gradle.kts << 'GBEOF'
 
           subprojects {
@@ -163,26 +177,9 @@ jobs:
             fi
           fi
 
-          if [ -f android/build.gradle ]; then
-            if ! grep -q "afterEvaluate" android/build.gradle; then
-              cat >> android/build.gradle << 'GBEOF'
-
-          subprojects {
-              afterEvaluate { project ->
-                  if (project.hasProperty("android")) {
-                      if (project.android.namespace == null) {
-                          project.android.namespace = "com.dailyhisab." + project.name.replace("-", "_")
-                      }
-                  }
-              }
-          }
-          GBEOF
-            fi
-          fi
-
-          # Also fix widget_test so analyze is clean (optional)
-          if [ -f test/widget_test.dart ]; then
-            cat > test/widget_test.dart << 'TESTEOF'
+          # Clean widget test
+          mkdir -p test
+          cat > test/widget_test.dart << 'TESTEOF'
           import 'package:flutter_test/flutter_test.dart';
 
           void main() {
@@ -191,7 +188,6 @@ jobs:
             });
           }
           TESTEOF
-          fi
 
       - name: Flutter pub get
         run: |
@@ -200,8 +196,7 @@ jobs:
 
       - name: Analyze
         continue-on-error: true
-        run: |
-          flutter analyze --no-fatal-infos 2>&1 | tee analyze.log || true
+        run: flutter analyze --no-fatal-infos 2>&1 | tee analyze.log || true
 
       - name: Build APK
         id: build
@@ -210,19 +205,17 @@ jobs:
           set -o pipefail
           flutter build apk --release -v 2>&1 | tee build.log
 
-      - name: Show errors from log
+      - name: Show errors
         if: always()
         run: |
-          echo "=== LAST 60 LINES ==="
-          tail -60 build.log || true
-          echo "=== GRADLE / DART ERRORS ==="
-          grep -E "What went wrong|error •|Error:|FAILURE|Expecting|e: file" build.log | head -40 || true
-          grep -E "error •" analyze.log | head -20 || true
+          echo "=== LAST 50 LINES ==="
+          tail -50 build.log || true
+          echo "=== KEY ERRORS ==="
+          grep -E "What went wrong|error •|Error:|FAILURE|Expecting|e: file|Script compilation" build.log | head -30 || true
 
       - name: Find APK
         if: always()
-        run: |
-          find . -name "*.apk" -type f 2>/dev/null || true
+        run: find . -name "*.apk" -type f 2>/dev/null || true
 
       - name: Upload APK
         if: always()
