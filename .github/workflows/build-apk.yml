@@ -74,7 +74,7 @@ jobs:
         working-directory: app_src
         run: flutter pub get
 
-      - name: Patch telephony plugin (namespace, compileSdk 36, Java/Kotlin 17, strip manifest package=)
+      - name: Patch telephony plugin (namespace, compileSdk 36, JVM 17, strip manifest package=)
         run: |
           TELE_DIR=$(find ~/.pub-cache -type d -name "telephony-*" | head -n 1)
           if [ -n "$TELE_DIR" ]; then
@@ -85,11 +85,15 @@ jobs:
               # compileSdk 36
               sed -i "s/compileSdkVersion [0-9]*/compileSdkVersion 36/" "$GRADLE"
               sed -i "s/compileSdk [0-9]*/compileSdk 36/" "$GRADLE"
-              # Java + Kotlin dono 17
-              sed -i "s/jvmTarget = '1_8'/jvmTarget = '17'/; s/jvmTarget = '1\.8'/jvmTarget = '17'/; s/jvmTarget = '11'/jvmTarget = '17'/" "$GRADLE"
+              # Existing jvmTarget values ko 17 karo (agar hon)
+              sed -i "s/jvmTarget = '1_8'/jvmTarget = '17'/; s/jvmTarget = '1\.8'/jvmTarget = '17'/; s/jvmTarget = '11'/jvmTarget = '17'/; s/jvmTarget = 11/jvmTarget = 17/; s/jvmTarget = 1\.8/jvmTarget = 17/" "$GRADLE"
               sed -i "s/VERSION_1_8/VERSION_17/g; s/VERSION_11/VERSION_17/g" "$GRADLE"
-              echo "--- patched telephony build.gradle ---"
-              cat "$GRADLE"
+              # JVM 17 block APPEND karo — AGP 9 par missing targets se
+              # 'Java (11) vs Kotlin (1.8) Inconsistent JVM Target' hard error aata hai.
+              # Base64-encoded snippet (heredoc-in-YAML issue se bachne ke liye)
+              echo 'Ci8vID09PSBDSSBQQVRDSCAoYnVpbGQtYXBrLXY5LnltbCk6IGZvcmNlIEphdmEvS290bGluIEpWTSB0YXJnZXQgMTcgPT09CmFuZHJvaWQgewogICAgY29tcGlsZU9wdGlvbnMgewogICAgICAgIHNvdXJjZUNvbXBhdGliaWxpdHkgSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgICAgIHRhcmdldENvbXBhdGliaWxpdHkgSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgfQogICAga290bGluT3B0aW9ucyB7CiAgICAgICAganZtVGFyZ2V0ID0gJzE3JwogICAgfQp9Cg==' | base64 -d >> "$GRADLE"
+              echo "--- telephony build.gradle (tail) ---"
+              tail -n 18 "$GRADLE"
             fi
             # Plugin manifest se package= strip karo
             MANIFEST="$TELE_DIR/android/src/main/AndroidManifest.xml"
