@@ -1,130 +1,114 @@
-name: Build Daily Collection APK v8
+name: Build Daily Collection APK (v9)
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, master ]
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
-
+    continue-on-error: true
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v5
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: zulu
-          java-version: "17"
+          java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          cache: true
 
-      - name: Extract project ZIP
+      - name: Extract source ZIP
         run: |
-          ZIPFILE=$(find . -maxdepth 2 -name "daily_collection*.zip" -type f | head -1)
-          if [ -z "$ZIPFILE" ]; then ZIPFILE=$(find . -maxdepth 2 -name "*.zip" -type f | head -1); fi
-          if [ -n "$ZIPFILE" ]; then
-            echo "Found ZIP: $ZIPFILE"
-            rm -rf extracted && mkdir -p extracted
-            unzip -o "$ZIPFILE" -d extracted
-            if [ -d extracted/daily_collection_app ]; then cp -a extracted/daily_collection_app/. .
-            elif [ -d extracted/daily_collection_v8 ]; then cp -a extracted/daily_collection_v8/. .
-            elif [ -f extracted/pubspec.yaml ]; then cp -a extracted/. .
-            else
-              INNER=$(find extracted -name "pubspec.yaml" | head -1)
-              [ -n "$INNER" ] && cp -a "$(dirname "$INNER")"/. .
-            fi
-          fi
-          test -f pubspec.yaml || (echo "ERROR: no pubspec" && exit 1)
+          ZIP_FILE=$(ls *.zip | head -n 1)
+          echo "Using ZIP: $ZIP_FILE"
+          mkdir -p app_src
+          unzip -o "$ZIP_FILE" -d app_src
+          cd app_src
+          if [ -d "android" ]; then echo "WARNING: android/ folder found in ZIP — deleting (workflow creates fresh)"; rm -rf android; fi
 
-      - name: Flutter create scaffolding
+      - name: Flutter create (android only)
+        working-directory: app_src
+        run: flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
+
+      - name: Set compileSdk / targetSdk 36 (app only, safe sed)
+        working-directory: app_src
         run: |
-          rm -rf android ios .dart_tool build
-          flutter create --org com.dailyhisab --project-name daily_collection_app --platforms=android .
-
-      - name: Set app compileSdk 36
-        run: |
-          if [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' android/app/build.gradle.kts
-            sed -i 's/compileSdk = [0-9][0-9]*/compileSdk = 36/' android/app/build.gradle.kts
-            sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' android/app/build.gradle.kts
-            sed -i 's/targetSdk = [0-9][0-9]*/targetSdk = 36/' android/app/build.gradle.kts
-          fi
-
-      - name: Write AndroidManifest
-        run: |
-          mkdir -p android/app/src/main
-          echo "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPG1hbmlmZXN0IHhtbG5zOmFuZHJvaWQ9Imh0dHA6Ly9zY2hlbWFzLmFuZHJvaWQuY29tL2Fway9yZXMvYW5kcm9pZCI+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLlNFTkRfU01TIi8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLlJFQURfU01TIi8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLlJFQ0VJVkVfU01TIi8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLlJFQURfQ09OVEFDVFMiLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uVVNFX0JJT01FVFJJQyIvPgogICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5VU0VfRklOR0VSUFJJTlQiLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uV1JJVEVfRVhURVJOQUxfU1RPUkFHRSIvPgogICAgPHVzZXMtcGVybWlzc2lvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQucGVybWlzc2lvbi5SRUFEX0VYVEVSTkFMX1NUT1JBR0UiLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uUE9TVF9OT1RJRklDQVRJT05TIi8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLklOVEVSTkVUIi8+CiAgICA8YXBwbGljYXRpb24KICAgICAgICBhbmRyb2lkOmxhYmVsPSJEYWlseSBDb2xsZWN0aW9uIgogICAgICAgIGFuZHJvaWQ6bmFtZT0iJHthcHBsaWNhdGlvbk5hbWV9IgogICAgICAgIGFuZHJvaWQ6aWNvbj0iQG1pcG1hcC9pY19sYXVuY2hlciIKICAgICAgICBhbmRyb2lkOnJlcXVlc3RMZWdhY3lFeHRlcm5hbFN0b3JhZ2U9InRydWUiPgogICAgICAgIDxhY3Rpdml0eQogICAgICAgICAgICBhbmRyb2lkOm5hbWU9Ii5NYWluQWN0aXZpdHkiCiAgICAgICAgICAgIGFuZHJvaWQ6ZXhwb3J0ZWQ9InRydWUiCiAgICAgICAgICAgIGFuZHJvaWQ6bGF1bmNoTW9kZT0ic2luZ2xlVG9wIgogICAgICAgICAgICBhbmRyb2lkOnRoZW1lPSJAc3R5bGUvTGF1bmNoVGhlbWUiCiAgICAgICAgICAgIGFuZHJvaWQ6Y29uZmlnQ2hhbmdlcz0ib3JpZW50YXRpb258a2V5Ym9hcmRIaWRkZW58a2V5Ym9hcmR8c2NyZWVuU2l6ZXxzbWFsbGVzdFNjcmVlblNpemV8bG9jYWxlfGxheW91dERpcmVjdGlvbnxmb250U2NhbGV8c2NyZWVuTGF5b3V0fGRlbnNpdHl8dWlNb2RlIgogICAgICAgICAgICBhbmRyb2lkOmhhcmR3YXJlQWNjZWxlcmF0ZWQ9InRydWUiCiAgICAgICAgICAgIGFuZHJvaWQ6d2luZG93U29mdElucHV0TW9kZT0iYWRqdXN0UmVzaXplIj4KICAgICAgICAgICAgPG1ldGEtZGF0YSBhbmRyb2lkOm5hbWU9ImlvLmZsdXR0ZXIuZW1iZWRkaW5nLmFuZHJvaWQuTm9ybWFsVGhlbWUiIGFuZHJvaWQ6cmVzb3VyY2U9IkBzdHlsZS9Ob3JtYWxUaGVtZSIvPgogICAgICAgICAgICA8aW50ZW50LWZpbHRlcj4KICAgICAgICAgICAgICAgIDxhY3Rpb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLmludGVudC5hY3Rpb24uTUFJTiIvPgogICAgICAgICAgICAgICAgPGNhdGVnb3J5IGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5pbnRlbnQuY2F0ZWdvcnkuTEFVTkNIRVIiLz4KICAgICAgICAgICAgPC9pbnRlbnQtZmlsdGVyPgogICAgICAgIDwvYWN0aXZpdHk+CiAgICAgICAgPG1ldGEtZGF0YSBhbmRyb2lkOm5hbWU9ImZsdXR0ZXJFbWJlZGRpbmciIGFuZHJvaWQ6dmFsdWU9IjIiIC8+CiAgICA8L2FwcGxpY2F0aW9uPgo8L21hbmlmZXN0Pgo=" | base64 -d > android/app/src/main/AndroidManifest.xml
-          mkdir -p test
-          echo 'import "package:flutter_test/flutter_test.dart"; void main(){test("p",(){expect(1,1);});}' > test/widget_test.dart
-
-      - name: Flutter pub get
-        run: flutter clean || true; flutter pub get
-
-      - name: Patch telephony only
-        run: |
-          TELE_DIR=$(find "$HOME/.pub-cache" -type d -path "*telephony-*/android" 2>/dev/null | head -1)
-          if [ -n "$TELE_DIR" ]; then
-            echo "Z3JvdXAgImNvbS5zaG91bmFrbXVsYXkudGVsZXBob255Igp2ZXJzaW9uICIxLjAtU05BUFNIT1QiCmJ1aWxkc2NyaXB0IHsKICAgIGV4dC5rb3RsaW5fdmVyc2lvbiA9ICIxLjguMjIiCiAgICByZXBvc2l0b3JpZXMgeyBnb29nbGUoKTsgbWF2ZW5DZW50cmFsKCkgfQogICAgZGVwZW5kZW5jaWVzIHsKICAgICAgICBjbGFzc3BhdGggImNvbS5hbmRyb2lkLnRvb2xzLmJ1aWxkOmdyYWRsZTo4LjEuMCIKICAgICAgICBjbGFzc3BhdGggIm9yZy5qZXRicmFpbnMua290bGluOmtvdGxpbi1ncmFkbGUtcGx1Z2luOiRrb3RsaW5fdmVyc2lvbiIKICAgIH0KfQpyb290UHJvamVjdC5hbGxwcm9qZWN0cyB7IHJlcG9zaXRvcmllcyB7IGdvb2dsZSgpOyBtYXZlbkNlbnRyYWwoKSB9IH0KYXBwbHkgcGx1Z2luOiAiY29tLmFuZHJvaWQubGlicmFyeSIKYXBwbHkgcGx1Z2luOiAia290bGluLWFuZHJvaWQiCmFuZHJvaWQgewogICAgbmFtZXNwYWNlICJjb20uc2hvdW5ha211bGF5LnRlbGVwaG9ueSIKICAgIGNvbXBpbGVTZGtWZXJzaW9uIDM2CiAgICBjb21waWxlT3B0aW9ucyB7CiAgICAgICAgc291cmNlQ29tcGF0aWJpbGl0eSBKYXZhVmVyc2lvbi5WRVJTSU9OXzE3CiAgICAgICAgdGFyZ2V0Q29tcGF0aWJpbGl0eSBKYXZhVmVyc2lvbi5WRVJTSU9OXzE3CiAgICB9CiAgICBrb3RsaW5PcHRpb25zIHsganZtVGFyZ2V0ID0gIjE3IiB9CiAgICBzb3VyY2VTZXRzIHsgbWFpbi5qYXZhLnNyY0RpcnMgKz0gInNyYy9tYWluL2tvdGxpbiIgfQogICAgZGVmYXVsdENvbmZpZyB7IG1pblNka1ZlcnNpb24gMTYgfQp9CmRlcGVuZGVuY2llcyB7IGltcGxlbWVudGF0aW9uICJvcmcuamV0YnJhaW5zLmtvdGxpbjprb3RsaW4tc3RkbGliLWpkazc6JGtvdGxpbl92ZXJzaW9uIiB9Cg==" | base64 -d > "$TELE_DIR/build.gradle"
-            echo "telephony patched"
-            cat "$TELE_DIR/build.gradle"
-            MF="$TELE_DIR/src/main/AndroidManifest.xml"
-            if [ -f "$MF" ]; then
-              sed -i 's/ package="[^"]*"//g' "$MF"
-              sed -i "s/ package='[^']*'//g" "$MF"
-            fi
-          else
-            echo "telephony not found"
-          fi
-          find "$HOME/.pub-cache" -path "*/android/src/main/AndroidManifest.xml" -type f 2>/dev/null | while read -r f; do
-            if grep -q 'package=' "$f"; then
-              sed -i 's/ package="[^"]*"//g' "$f"
-              sed -i "s/ package='[^']*'//g" "$f"
+          sed -i 's/^flutter {/flutter {/' android/app/build.gradle* 2>/dev/null || true
+          # Only replace full assignment lines (known broken-sed fix from v8)
+          for F in android/app/build.gradle android/app/build.gradle.kts; do
+            if [ -f "$F" ]; then
+              sed -i 's/^[[:space:]]*compileSdk[[:space:]]*=.*/        compileSdk = 36/' "$F"
+              sed -i 's/^[[:space:]]*targetSdk[[:space:]]*=.*/        targetSdk = 36/' "$F"
+              sed -i 's/^[[:space:]]*compileSdkVersion[[:space:]]*[0-9a-zA-Z_]*/        compileSdkVersion 36/' "$F"
+              sed -i 's/^[[:space:]]*targetSdkVersion[[:space:]]*[0-9a-zA-Z_]*/        targetSdkVersion 36/' "$F"
+              echo "Patched $F"
             fi
           done
 
-      - name: Analyze
-        continue-on-error: true
-        run: flutter analyze --no-fatal-infos 2>&1 | tee analyze.log || true
-
-      - name: Build APK
-        continue-on-error: true
+      - name: Write AndroidManifest with permissions
+        working-directory: app_src
         run: |
-          set -o pipefail
-          flutter build apk --release -v 2>&1 | tee build.log
+          echo "PG1hbmlmZXN0IHhtbG5zOmFuZHJvaWQ9Imh0dHA6Ly9zY2hlbWFzLmFuZHJvaWQuY29tL2Fway9yZXMvYW5kcm9pZCI+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLklOVEVSTkVUIi8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLlNFTkRfU01TIi8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLlJFQURfUEhPTkVfU1RBVEUiLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uUE9TVF9OT1RJRklDQVRJT05TIi8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLlJFQ0VJVkVfQk9PVF9DT01QTEVURUQiLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uU0NIRURVTEVfRVhBQ1RfQUxBUk0iLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uUkVBRF9NRURJQV9JTUFHRVMiLz4KICAgIDx1c2VzLXBlcm1pc3Npb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLnBlcm1pc3Npb24uUkVBRF9FWFRFUk5BTF9TVE9SQUdFIiBhbmRyb2lkOm1heFNka1ZlcnNpb249IjMyIi8+CiAgICA8dXNlcy1wZXJtaXNzaW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5wZXJtaXNzaW9uLldSSVRFX0VYVEVSTkFMX1NUT1JBR0UiIGFuZHJvaWQ6bWF4U2RrVmVyc2lvbj0iMjkiLz4KICAgIDxhcHBsaWNhdGlvbgogICAgICAgIGFuZHJvaWQ6bGFiZWw9IkRhaWx5IENvbGxlY3Rpb24iCiAgICAgICAgYW5kcm9pZDpuYW1lPSIke2FwcGxpY2F0aW9uTmFtZX0iCiAgICAgICAgYW5kcm9pZDppY29uPSJAbWlwbWFwL2ljX2xhdW5jaGVyIj4KICAgICAgICA8YWN0aXZpdHkKICAgICAgICAgICAgYW5kcm9pZDpuYW1lPSIuTWFpbkFjdGl2aXR5IgogICAgICAgICAgICBhbmRyb2lkOmV4cG9ydGVkPSJ0cnVlIgogICAgICAgICAgICBhbmRyb2lkOmxhdW5jaE1vZGU9InNpbmdsZVRvcCIKICAgICAgICAgICAgYW5kcm9pZDp0YXNrQWZmaW5pdHk9IiIKICAgICAgICAgICAgYW5kcm9pZDp0aGVtZT0iQHN0eWxlL0xhdW5jaFRoZW1lIgogICAgICAgICAgICBhbmRyb2lkOmNvbmZpZ0NoYW5nZXM9Im9yaWVudGF0aW9ufGtleWJvYXJkSGlkZGVufGtleWJvYXJkfHNjcmVlblNpemV8c21hbGxlc3RTY3JlZW5TaXplfGxvY2FsZXxsYXlvdXREaXJlY3Rpb258Zm9udFNjYWxlfHNjcmVlbkxheW91dHxkZW5zaXR5fHVpTW9kZSIKICAgICAgICAgICAgYW5kcm9pZDpoYXJkd2FyZUFjY2VsZXJhdGVkPSJ0cnVlIgogICAgICAgICAgICBhbmRyb2lkOndpbmRvd1NvZnRJbnB1dE1vZGU9ImFkanVzdFJlc2l6ZSI+CiAgICAgICAgICAgIDxtZXRhLWRhdGEKICAgICAgICAgICAgICAgIGFuZHJvaWQ6bmFtZT0iaW8uZmx1dHRlci5lbWJlZGRpbmcuYW5kcm9pZC5Ob3JtYWxUaGVtZSIKICAgICAgICAgICAgICAgIGFuZHJvaWQ6cmVzb3VyY2U9IkBzdHlsZS9Ob3JtYWxUaGVtZSIvPgogICAgICAgICAgICA8aW50ZW50LWZpbHRlcj4KICAgICAgICAgICAgICAgIDxhY3Rpb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLmludGVudC5hY3Rpb24uTUFJTiIvPgogICAgICAgICAgICAgICAgPGNhdGVnb3J5IGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5pbnRlbnQuY2F0ZWdvcnkuTEFVTkNIRVIiLz4KICAgICAgICAgICAgPC9pbnRlbnQtZmlsdGVyPgogICAgICAgIDwvYWN0aXZpdHk+CiAgICAgICAgPG1ldGEtZGF0YQogICAgICAgICAgICBhbmRyb2lkOm5hbWU9ImZsdXR0ZXJFbWJlZGRpbmciCiAgICAgICAgICAgIGFuZHJvaWQ6dmFsdWU9IjIiLz4KICAgIDwvYXBwbGljYXRpb24+CiAgICA8cXVlcmllcz4KICAgICAgICA8aW50ZW50PgogICAgICAgICAgICA8YWN0aW9uIGFuZHJvaWQ6bmFtZT0iYW5kcm9pZC5pbnRlbnQuYWN0aW9uLlBST0NFU1NfVEVYVCIvPgogICAgICAgICAgICA8ZGF0YSBhbmRyb2lkOm1pbWVUeXBlPSJ0ZXh0L3BsYWluIi8+CiAgICAgICAgPC9pbnRlbnQ+CiAgICAgICAgPGludGVudD4KICAgICAgICAgICAgPGFjdGlvbiBhbmRyb2lkOm5hbWU9ImFuZHJvaWQuaW50ZW50LmFjdGlvbi5WSUVXIi8+CiAgICAgICAgICAgIDxkYXRhIGFuZHJvaWQ6c2NoZW1lPSJodHRwcyIvPgogICAgICAgIDwvaW50ZW50PgogICAgICAgIDxpbnRlbnQ+CiAgICAgICAgICAgIDxhY3Rpb24gYW5kcm9pZDpuYW1lPSJhbmRyb2lkLmludGVudC5hY3Rpb24uU0VORCIvPgogICAgICAgICAgICA8ZGF0YSBhbmRyb2lkOm1pbWVUeXBlPSIqLyoiLz4KICAgICAgICA8L2ludGVudD4KICAgIDwvcXVlcmllcz4KPC9tYW5pZmVzdD4K" | base64 -d > android/app/src/main/AndroidManifest.xml
 
-      - name: Show result
-        if: always()
+      - name: Flutter pub get
+        working-directory: app_src
+        run: flutter pub get
+
+      - name: Patch telephony plugin (namespace, compileSdk 36, Java/Kotlin 17, strip manifest package=)
         run: |
-          tail -50 build.log || true
-          grep -E "What went wrong|FAILURE|Built|app-release" build.log | head -20 || true
-          find . -name "*.apk" -type f 2>/dev/null || true
+          TELE_DIR=$(find ~/.pub-cache -type d -name "telephony-*" | head -n 1)
+          if [ -n "$TELE_DIR" ]; then
+            GRADLE="$TELE_DIR/android/build.gradle"
+            if [ -f "$GRADLE" ]; then
+              # Namespace add karo (missing ho to)
+              grep -q "namespace" "$GRADLE" || sed -i "s|defaultConfig {|defaultConfig {\n        namespace 'com.kaluwa.fluttertelephony'|" "$GRADLE"
+              # compileSdk 36
+              sed -i "s/compileSdkVersion [0-9]*/compileSdkVersion 36/" "$GRADLE"
+              sed -i "s/compileSdk [0-9]*/compileSdk 36/" "$GRADLE"
+              # Java + Kotlin dono 17
+              sed -i "s/jvmTarget = '1_8'/jvmTarget = '17'/; s/jvmTarget = '1\.8'/jvmTarget = '17'/; s/jvmTarget = '11'/jvmTarget = '17'/" "$GRADLE"
+              sed -i "s/VERSION_1_8/VERSION_17/g; s/VERSION_11/VERSION_17/g" "$GRADLE"
+              echo "--- patched telephony build.gradle ---"
+              cat "$GRADLE"
+            fi
+            # Plugin manifest se package= strip karo
+            MANIFEST="$TELE_DIR/android/src/main/AndroidManifest.xml"
+            if [ -f "$MANIFEST" ]; then
+              sed -i 's/ package="[^"]*"//' "$MANIFEST"
+            fi
+            echo "Telephony patched at $TELE_DIR"
+          else
+            echo "telephony not found in pub-cache"
+          fi
 
-      - name: Upload APK
-        if: always()
+      - name: Flutter analyze (non-blocking)
+        working-directory: app_src
+        run: flutter analyze || true
+
+      - name: Build APK (release)
+        working-directory: app_src
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: daily-collection-apk
-          path: |
-            build/app/outputs/flutter-apk/*.apk
-            **/app-release.apk
-          if-no-files-found: warn
-          retention-days: 14
+          path: app_src/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: ignore
 
-      - name: Upload logs
-        if: always()
+      - name: Upload build logs on failure
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: build-logs
           path: |
-            build.log
-            analyze.log
+            app_src/build/reports
+            /home/runner/work/_temp/**/*.log
           if-no-files-found: ignore
-          retention-days: 7
