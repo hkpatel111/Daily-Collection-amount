@@ -40,7 +40,6 @@ jobs:
       - name: Set compileSdk / targetSdk 36 (app only, safe sed)
         working-directory: app_src
         run: |
-          sed -i 's/^flutter {/flutter {/' android/app/build.gradle* 2>/dev/null || true
           # Only replace full assignment lines (known broken-sed fix from v8)
           for F in android/app/build.gradle android/app/build.gradle.kts; do
             if [ -f "$F" ]; then
@@ -48,21 +47,29 @@ jobs:
               sed -i 's/^[[:space:]]*targetSdk[[:space:]]*=.*/        targetSdk = 36/' "$F"
               sed -i 's/^[[:space:]]*compileSdkVersion[[:space:]]*[0-9a-zA-Z_]*/        compileSdkVersion 36/' "$F"
               sed -i 's/^[[:space:]]*targetSdkVersion[[:space:]]*[0-9a-zA-Z_]*/        targetSdkVersion 36/' "$F"
-              echo "Patched $F"
+              echo "=== $F (compileSdk/targetSdk lines) ==="
+              grep -nE "(compileSdk|targetSdk|minSdk)" "$F" || true
+            else
+              echo "NOTE: $F not found"
             fi
           done
 
       - name: Enable core library desugaring (REQUIRED for flutter_local_notifications)
         working-directory: app_src
         run: |
-          GFILE="android/app/build.gradle"
-          [ -f "$GFILE" ] || GFILE="android/app/build.gradle.kts"
-          if [ -f "$GFILE" ] && [ "$GFILE" = "android/app/build.gradle" ]; then
+          # Flutter 3.47 template build.gradle.kts (Kotlin DSL) generate karta hai.
+          # Dono cases handle karo — har format ka apna syntax:
+          if [ -f android/app/build.gradle.kts ]; then
+            echo 'Ci8vID09PSBDSSBQQVRDSDogY29yZSBsaWJyYXJ5IGRlc3VnYXJpbmcgKGZsdXR0ZXJfbG9jYWxfbm90aWZpY2F0aW9ucyByZXF1aXJlbWVudCkgPT09CmFuZHJvaWQgewogICAgY29tcGlsZU9wdGlvbnMgewogICAgICAgIHNvdXJjZUNvbXBhdGliaWxpdHkgPSBKYXZhVmVyc2lvbi5WRVJTSU9OXzE3CiAgICAgICAgdGFyZ2V0Q29tcGF0aWJpbGl0eSA9IEphdmFWZXJzaW9uLlZFUlNJT05fMTcKICAgICAgICBpc0NvcmVMaWJyYXJ5RGVzdWdhcmluZ0VuYWJsZWQgPSB0cnVlCiAgICB9CiAgICBrb3RsaW5PcHRpb25zIHsKICAgICAgICBqdm1UYXJnZXQgPSAiMTciCiAgICB9CiAgICBkZWZhdWx0Q29uZmlnIHsKICAgICAgICBtdWx0aURleEVuYWJsZWQgPSB0cnVlCiAgICB9Cn0KCmRlcGVuZGVuY2llcyB7CiAgICBjb3JlTGlicmFyeURlc3VnYXJpbmcoImNvbS5hbmRyb2lkLnRvb2xzOmRlc3VnYXJfamRrX2xpYnM6Mi4xLjQiKQp9Cg==' | base64 -d >> android/app/build.gradle.kts
+            echo "--- Desugaring appended to build.gradle.kts (tail): ---"
+            tail -n 22 android/app/build.gradle.kts
+          elif [ -f android/app/build.gradle ]; then
             echo 'ZGVmIGxvY2FsUHJvcHMgPSBuZXcgUHJvcGVydGllcygpCmRlZiBsb2NhbFByb3BzRmlsZSA9IHJvb3RQcm9qZWN0LmZpbGUoJ2xvY2FsLnByb3BlcnRpZXMnKQppZiAobG9jYWxQcm9wc0ZpbGUuZXhpc3RzKCkpIHsKICAgIGxvY2FsUHJvcHNGaWxlLndpdGhSZWFkZXIoJ1VURi04JykgeyByZWFkZXIgLT4KICAgICAgICBsb2NhbFByb3BzLmxvYWQocmVhZGVyKQogICAgfQp9CgphbmRyb2lkIHsKICAgIGNvbXBpbGVPcHRpb25zIHsKICAgICAgICBzb3VyY2VDb21wYXRpYmlsaXR5ID0gSmF2YVZlcnNpb24uVkVSU0lPTl8xNwogICAgICAgIHRhcmdldENvbXBhdGliaWxpdHkgPSBKYXZhVmVyc2lvbi5WRVJTSU9OXzE3CiAgICAgICAgY29yZUxpYnJhcnlEZXN1Z2FyaW5nRW5hYmxlZCA9IHRydWUKICAgIH0KCiAgICBkZWZhdWx0Q29uZmlnIHsKICAgICAgICBtdWx0aURleEVuYWJsZWQgPSB0cnVlCiAgICB9Cn0KCmRlcGVuZGVuY2llcyB7CiAgICBjb3JlTGlicmFyeURlc3VnYXJpbmcgJ2NvbS5hbmRyb2lkLnRvb2xzOmRlc3VnYXJfamRrX2xpYnM6Mi4xLjQnCn0K' | base64 -d >> android/app/build.gradle
-            echo "--- Desugaring appended to android/app/build.gradle (tail): ---"
+            echo "--- Desugaring appended to build.gradle (tail): ---"
             tail -n 25 android/app/build.gradle
           else
-            echo "WARNING: build.gradle not Groovy or not found — desugaring NOT applied ($GFILE)"
+            echo "ERROR: koi build.gradle file nahi mili!"
+            exit 1
           fi
 
       - name: Write AndroidManifest with permissions
